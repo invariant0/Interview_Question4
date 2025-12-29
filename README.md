@@ -87,7 +87,7 @@ tensorflow-probability>=0.18.0
 numpy>=1.21.0
 ```
 
-# Project Structure
+## Project Structure
 ```bash
 econ_models/
 ├── cli/                              # Command-line interfaces
@@ -159,7 +159,7 @@ econ_models/
     └── risky_debt_model_vfi_results.npz
 ```
 
-# Workflow
+## Workflow
 The recommended workflow ensures consistent and reproducible results:
 ```bash
 ┌─────────────────────────────────────────────────────────────────┐
@@ -194,20 +194,20 @@ The recommended workflow ensures consistent and reproducible results:
 ```
 
 
-## Important Notes
+### Important Notes
 VFI must run first: The VFI solver determines economically reasonable state space boundaries. These boundaries are saved to hyperparam/autogen/ and are required for deep learning training.
 
 Parameter consistency: The validation scripts check that boundaries were computed with the same economic parameters currently in use. If parameters change, re-run the VFI solver.
 
 Ground truth generation: VFI solutions serve as benchmarks for evaluating deep learning model quality.
 
-# Usage
-## Step 1: Configure Parameters
+## Usage
+### Step 1: Configure Parameters
 Create or modify the JSON configuration files in hyperparam/prefixed/:
 
 Economic Parameters (econ_params_basic.json or econ_params_risky.json)
 
-## Step 2: Solve with VFI
+### Step 2: Solve with VFI
 Run the VFI solver to discover boundaries and generate ground truth solutions:
 
 ```bash
@@ -223,7 +223,7 @@ Automatically discover state space boundaries via simulation
 Save boundaries to hyperparam/autogen/bounds_<model>.json
 Compute and save ground truth value functions to ground_truth/
 
-## Step 3: Train Deep Learning Models
+### Step 3: Train Deep Learning Models
 Train neural network approximations using the validated boundaries:
 
 ```bash
@@ -241,7 +241,7 @@ Target Networks: Polyak averaging for training stability
 AiO Loss: Combines Bellman and Euler residuals (basic model)
 Automatic Checkpointing: Saves weights periodically
 
-## Step 4: Validate Results
+### Step 4: Validate Results
 Evaluate deep learning solution quality against VFI ground truth:
 
 ```bash
@@ -252,8 +252,8 @@ python tests/effectiveness_dl_basic.py
 python tests/effectiveness_dl_risky.py
 ```
 
-# Testing and Validation
-## Ground Truth Validation
+## Testing and Validation
+### Ground Truth Validation
 The VFI solutions provide benchmark value functions and policy functions. Validation includes:
 
 Convergence Check: Verify VFI has converged within tolerance
@@ -261,7 +261,7 @@ Boundary Hit Analysis: Ensure simulated paths stay within the grid
 Policy Monotonicity: Check economic reasonableness of policies
 
 
-## Deep Learning Effectiveness Assessment
+### Deep Learning Effectiveness Assessment
 The effectiveness scripts evaluate:
 
 Metric	Description
