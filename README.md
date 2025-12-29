@@ -184,6 +184,8 @@ econ_models/
 │  Compare DL solutions against VFI ground truth                  │
 │  Scripts: effectiveness_dl_basic.py, effectiveness_dl_risky.py │
 └─────────────────────────────────────────────────────────────────┘
+```
+
 
 Usage
 Step 1: Configure Parameters
