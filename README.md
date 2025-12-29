@@ -154,6 +154,10 @@ econ_models/
 └── ground_truth/                     # VFI solutions
     ├── basic_model_vfi_results.npz
     └── risky_debt_model_vfi_results.npz
+```
+
+# Workflow
+The recommended workflow ensures consistent and reproducible results:
 
 ┌─────────────────────────────────────────────────────────────────┐
 │                    1. CONFIGURE PARAMETERS                       │
@@ -184,7 +188,7 @@ econ_models/
 │  Compare DL solutions against VFI ground truth                  │
 │  Scripts: effectiveness_dl_basic.py, effectiveness_dl_risky.py │
 └─────────────────────────────────────────────────────────────────┘
-```
+
 
 
 ## Important Notes
