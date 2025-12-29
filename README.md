@@ -187,43 +187,45 @@ econ_models/
 ```
 
 
-Important Notes
+## Important Notes
 VFI must run first: The VFI solver determines economically reasonable state space boundaries. These boundaries are saved to hyperparam/autogen/ and are required for deep learning training.
 
 Parameter consistency: The validation scripts check that boundaries were computed with the same economic parameters currently in use. If parameters change, re-run the VFI solver.
 
 Ground truth generation: VFI solutions serve as benchmarks for evaluating deep learning model quality.
 
-Usage
-Step 1: Configure Parameters
+# Usage
+## Step 1: Configure Parameters
 Create or modify the JSON configuration files in hyperparam/prefixed/:
 
 Economic Parameters (econ_params_basic.json or econ_params_risky.json)
 
-Step 2: Solve with VFI
+## Step 2: Solve with VFI
 Run the VFI solver to discover boundaries and generate ground truth solutions:
 
+```bash
 # Solve Basic RBC Model
 python -m econ_models.cli.solve_vfi --model basic
 
 # Solve Risky Debt Model
 python -m econ_models.cli.solve_vfi --model risky
-
+```
 This will:
 
 Automatically discover state space boundaries via simulation
 Save boundaries to hyperparam/autogen/bounds_<model>.json
 Compute and save ground truth value functions to ground_truth/
 
-
-Step 3: Train Deep Learning Models
+## Step 3: Train Deep Learning Models
 Train neural network approximations using the validated boundaries:
 
+```bash
 # Train Basic Model
 python -m econ_models.cli.train_dl --model basic
 
 # Train Risky Debt Model
 python -m econ_models.cli.train_dl --model risky
+```
 
 Training features:
 
@@ -231,27 +233,44 @@ Curriculum Learning: Gradually expands sampling domain from steady state
 Target Networks: Polyak averaging for training stability
 AiO Loss: Combines Bellman and Euler residuals (basic model)
 Automatic Checkpointing: Saves weights periodically
-Step 4: Validate Results
+
+## Step 4: Validate Results
 Evaluate deep learning solution quality against VFI ground truth:
 
+```bash
 # Validate Basic Model
 python tests/effectiveness_dl_basic.py
 
 # Validate Risky Debt Model
 python tests/effectiveness_dl_risky.py
+```
 
-Testing and Validation
-Ground Truth Validation
+# Testing and Validation
+## Ground Truth Validation
 The VFI solutions provide benchmark value functions and policy functions. Validation includes:
 
 Convergence Check: Verify VFI has converged within tolerance
 Boundary Hit Analysis: Ensure simulated paths stay within the grid
 Policy Monotonicity: Check economic reasonableness of policies
 
+
+## Deep Learning Effectiveness Assessment
+The effectiveness scripts evaluate:
+
+Metric	Description
+Mean Absolute Error	Average absolute deviation from VFI solution
+Max Absolute Error	Worst-case deviation across state space
+R² Score	Explained variance relative to VFI values
+Policy Accuracy	Agreement on optimal actions
+Bellman Residual	Violation of Bellman equation
 Running Tests
+
+```bash
 # Run all validation tests
 python -m pytest tests/
 
 # Run specific effectiveness evaluation
 python tests/effectiveness_dl_basic.py
 python tests/effectiveness_dl_risky.py
+
+```
