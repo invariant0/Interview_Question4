@@ -1,0 +1,23 @@
+{
+  "is_sufficient": true,
+  "threshold": 0.01,
+  "bounds": {
+    "k_min": 1.0680288063477166,
+    "k_max": 6.4615742784036865,
+    "b_min": -0.5169259422722949,
+    "b_max": 30.811187164324224,
+    "z_min": 0.4841133139350197,
+    "z_max": 2.065632176399231
+  },
+  "hit_rates": {
+    "k_min": 0.0,
+    "k_max": 0.0,
+    "b_min": 0.0,
+    "b_max": 0.0
+  },
+  "simulation_info": {
+    "n_batches": 50,
+    "steps_per_batch": 5000,
+    "total_observations": 250000
+  }
+}

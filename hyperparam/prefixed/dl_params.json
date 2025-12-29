@@ -1,0 +1,43 @@
+{
+    "basic": {
+        "batch_size": 5000,
+        "learning_rate": 0.001,
+        "epochs": 500,
+        "steps_per_epoch": 100,
+        "hidden_layers": [64, 64],
+        "activation_function": "tanh",
+        "euler_residual_weight": 10000.0,
+        "tauchen_std_dev_width": 3.0,
+        "capital_min_scale": 0.1,
+        "capital_max_scale": 3.0,
+        "boundary_margin": 0.05,
+        "curriculum_epochs": 100,
+        "curriculum_initial_ratio": 0.1
+    },
+    "risky": {
+        "batch_size": 100,
+        "learning_rate": 0.0005,
+        "epochs": 1000,
+        "steps_per_epoch": 50,
+        "hidden_layers": [64, 64],
+        "activation_function": "leaky_relu",
+        "mc_sample_number_bond_priceing": 30,
+        "mc_sample_number_continuation_value": 30,
+        "mc_next_candidate_sample": 3000,
+        "polyak_averaging_decay": 0.005,
+        "curriculum_epochs": 200,
+        "curriculum_initial_ratio": 0.1,
+        "gradient_clip_norm": 1.0,
+        "sampling_beta_alpha": 0.5,
+        "sampling_beta_beta": 2.0,
+        "min_q_price": 1e-4,
+        "epsilon_debt": 1e-4,
+        "epsilon_value_default": 1e-4,
+        "tauchen_std_dev_width": 3.0,
+        "capital_min_scale": 0.1,
+        "capital_max_scale": 3.0,
+        "debt_min_scale": 0.0,
+        "debt_max_scale": 15.0,
+        "boundary_margin": 0.05
+    }
+}

@@ -1,0 +1,25 @@
+{
+    "basic": {
+        "n_capital": 200,
+        "n_productivity": 15,
+        "n_debt": 0,
+        "tauchen_width": 3.0,
+        "tol_vfi": 1e-7,
+        "max_iter_vfi": 5000
+    },
+    "risky": {
+        "n_capital": 90,
+        "n_productivity": 12,
+        "n_debt": 90,
+        "tauchen_width": 3.0,
+        "tol_vfi": 1e-6,
+        "max_iter_vfi": 2000,
+        "tol_outer": 1e-6,
+        "max_outer": 500,
+        "v_default_eps": 1e-6,
+        "b_eps": 1e-6,
+        "q_min": 1e-6,
+        "relax_q": 1.0,
+        "collateral_violation_penalty": -1e10
+    }
+}
