@@ -158,7 +158,7 @@ econ_models/
 
 # Workflow
 The recommended workflow ensures consistent and reproducible results:
-
+```bash
 ┌─────────────────────────────────────────────────────────────────┐
 │                    1. CONFIGURE PARAMETERS                       │
 │  Define economic parameters and solver settings in JSON files   │
@@ -188,7 +188,7 @@ The recommended workflow ensures consistent and reproducible results:
 │  Compare DL solutions against VFI ground truth                  │
 │  Scripts: effectiveness_dl_basic.py, effectiveness_dl_risky.py │
 └─────────────────────────────────────────────────────────────────┘
-
+```
 
 
 ## Important Notes
