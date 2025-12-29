@@ -165,7 +165,7 @@ econ_models/
 ┌─────────────────────────────────────────────────────────────────┐
 │                   2. RUN VFI SOLVER                              │
 │  Discover state space boundaries and compute ground truth       │
-│  Command: python -m econ_models.cli.solve_vfi --model <type>    │
+│  Command: solve_vfi --model <type>    │
 │  Output: boundaries → hyperparam/autogen/                        │
 │          solutions → ground_truth/                               │
 └─────────────────────────────────────────────────────────────────┘
@@ -174,7 +174,7 @@ econ_models/
 ┌─────────────────────────────────────────────────────────────────┐
 │                 3. TRAIN DEEP LEARNING MODEL                     │
 │  Train neural networks using validated boundaries               │
-│  Command: python -m econ_models.cli.train_dl --model <type>     │
+│  Command: train_dl --model <type>     │
 │  Output: checkpoints → checkpoints/                              │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -187,11 +187,18 @@ econ_models/
 ```
 
 
+Important Notes
+VFI must run first: The VFI solver determines economically reasonable state space boundaries. These boundaries are saved to hyperparam/autogen/ and are required for deep learning training.
+
+Parameter consistency: The validation scripts check that boundaries were computed with the same economic parameters currently in use. If parameters change, re-run the VFI solver.
+
+Ground truth generation: VFI solutions serve as benchmarks for evaluating deep learning model quality.
+
 Usage
 Step 1: Configure Parameters
 Create or modify the JSON configuration files in hyperparam/prefixed/:
 
-Economic Parameters (econ_params_basic.json or econ_params_risky.json):
+Economic Parameters (econ_params_basic.json or econ_params_risky.json)
 
 Step 2: Solve with VFI
 Run the VFI solver to discover boundaries and generate ground truth solutions:
