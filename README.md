@@ -66,15 +66,12 @@ A corporate finance model with risky debt and endogenous default options.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/econ-models.git
+git clone https://github.com/invariant0/Interview_Question4.git
 cd econ-models
 
 # Create virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
 
 # Install package in development mode
 pip install -e .
@@ -85,6 +82,7 @@ Create a requirements.txt file with:
 tensorflow>=2.10.0
 tensorflow-probability>=0.18.0
 numpy>=1.21.0
+
 ```
 
 ## Project Structure
