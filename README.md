@@ -85,7 +85,10 @@ Create a requirements.txt file with:
 tensorflow>=2.10.0
 tensorflow-probability>=0.18.0
 numpy>=1.21.0
+```
 
+# Project Structure
+```bash
 econ_models/
 ├── cli/                              # Command-line interfaces
 │   ├── solve_vfi.py                  # VFI solver CLI
