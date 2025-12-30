@@ -22,11 +22,11 @@ from typing import Union
 # We use float32 for a balance between numerical stability and performance.
 # For applications requiring higher precision, consider switching to float64.
 
-TENSORFLOW_DTYPE = tf.float32
-NUMPY_DTYPE = np.float32
+TENSORFLOW_DTYPE = tf.float64
+NUMPY_DTYPE = np.float64
 
 # Configure Keras backend to match global precision
-tf.keras.backend.set_floatx("float32")
+tf.keras.backend.set_floatx("float64")
 
 # -----------------------------------------------------------------------------
 # Type Aliases
@@ -35,4 +35,4 @@ tf.keras.backend.set_floatx("float32")
 
 Tensor = tf.Tensor
 Array = np.ndarray
-Numeric = Union[float, np.float32, tf.Tensor]
+Numeric = Union[float, np.float64, tf.Tensor]
