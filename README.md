@@ -229,8 +229,9 @@ solve_vfi --model risky
 ```
 This will:
 
-Automatically discover state space boundaries via simulation
-Save boundaries to hyperparam/autogen/bounds_<model>.json
+1. Automatically discover state space boundaries via simulation
+
+2. Save boundaries to hyperparam/autogen/bounds_<model>.json
 Compute and save ground truth value functions to ground_truth/
 
 ### Step 3: Train Deep Learning Models
@@ -287,6 +288,7 @@ The effectiveness of deep learning solution are defined with the following metri
 | Bellman Residual | Violation of Bellman equation |
 | Euler Residual | For basic model using FOC constrain Euler residual is enabled |
 | Recovery rate of default states | For risky model f1 score is used to measure accuracy of identifying default states |
+| Risky Bound Price | For risky model we test whether dl produced risky bound price align with VFI benchmark |
 
 
 ## Running Tests
