@@ -24,7 +24,7 @@ This repository provides two complementary approaches for solving infinite-horiz
 
 **Value Function Iteration (VFI)**: A traditional discrete-grid method that provides high-accuracy "ground truth" solutions through Bellman equation iteration. The VFI solver also performs automatic boundary discovery to ensure the computational domain captures equilibrium dynamics.
 
-**Deep Learning with AiO Loss**: A neural network approach using the All-in-One (AiO) loss function, which uses two samples product to approximate nested expectations unbiasly which gives a well structured regression loss objective for neural network approximation. The key point to success is enforcing maximization of RHS function value which in this work we choose FOC constrain methods and direct grid search maximization methods.
+**Deep Learning with AiO Loss**: Our neural network training follows the deep learning framework of Maliar, Maliar, and Winant (2021). We leverage their All-in-One (AiO) expectation operator, which provides unbiased estimation of nested expectations through the product of two independent samples—a technique that reduces computational cost from $O(n^2)$ to $O(n)$ for integration. The key implementation challenge, as noted by Maliar et al. (2021), is enforcing maximization on the right-hand side of the Bellman equation. Their original work employs FOC constraints. We adopt FOC for basic modeling and extend this to risky debt modeling by also implementing direct grid search maximization, providing a complementary approach that avoids derivative computation.
 
 ---
 
@@ -39,7 +39,7 @@ A standard basic investment model with capital adjustment costs.
 | State Space | Capital (K), Productivity (Z) |
 | Choice Variable | Investment Rate (I) |
 | Production | Cobb-Douglas: Y = Z × K^θ |
-| Features | Convex adjustment costs, AR(1) productivity shocks, Well structured gradient allowing FOC |
+| Features | Convex adjustment costs, AR(1) productivity shocks, smooth objective enabling FOC-based optimization |
 
 ### Investment Model with Risky Debt
 
@@ -50,7 +50,7 @@ A corporate finance model with risky debt and endogenous default options.
 | State Space | Capital (K), Debt (B), Productivity (Z) |
 | Choice Variables | Next-period capital (K'), next-period debt (B') |
 | Bond Pricing | Bond price are not fixed but dynamic with competitive lending |
-| Features | Collateral constraints, equity issuance costs, tax shields, Gradient vanish at default boundary |
+| Features | Collateral constraints, equity issuance costs, tax shields, non-differentiable kinks at default boundaries requiring smooth approximation |
 
 ---
 
@@ -248,10 +248,10 @@ train-dl --model risky
 ### Training features:
 
 **For Basic Model**  
-  We choose to use AiO construction with bellman residual and FOC residual minimization, and seperate value net and policy net for the gradient is easy to compute and avoid conflict in gradient decent.
+  We employ the AiO (All-in-One) expectation operator from Maliar et al. (2021), minimizing both Bellman residuals and FOC residuals jointly. We use separate value and policy networks to avoid gradient conflicts during optimization—the value network learns the continuation value while the policy network learns optimal investment decisions, with each network receiving clean gradient signals for its respective objective.
 
 **For Risky Model**  
-  We choose direct search maximization using MC simulation sample size 30 to approximate the maximization opeartion in the RHS of the bellman equation. To make the training stable we choose to use target net with gradual update together with curriculum sampling methods which focuses on states that are not likely to default and with plenty of well structured gradients signal to learn from and gradually increase the range of the state space and action space, details of the implementation and rational will be on the report. 
+  We use direct grid search maximization with Monte Carlo simulation (sample size 30) to approximate the maximization operator on the right-hand side of the Bellman equation. To stabilize training, we employ: (1) a target network with gradual (soft) updates to prevent oscillation from bootstrapping, and (2) curriculum learning that initially focuses on states far from the default boundary—where the value function is smooth and gradients are well-defined—then gradually expands coverage to include states near default. Implementation details and rationale are provided in the full report.
 
 ### Step 4: Validate Results
 Evaluate deep learning solution quality against VFI ground truth:
@@ -288,7 +288,7 @@ The effectiveness of deep learning solution are defined with the following metri
 | Bellman Residual | Violation of Bellman equation |
 | Euler Residual | For basic model using FOC constrain Euler residual is enabled |
 | Recovery rate of default states | For risky model f1 score is used to measure accuracy of identifying default states |
-| Risky Bound Price | For risky model we test whether dl produced risky bound price align with VFI benchmark |
+| Risky Bound Price Error | For risky model we test whether dl produced risky bound price align with VFI benchmark |
 
 
 ## Running Tests
