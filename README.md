@@ -270,6 +270,7 @@ The VFI solutions provide benchmark for value functions and company economic beh
 
 | Check | Description |
 |-------|-------------|
+| Convergence Diagnostics | Report iterations to convergence, tolerance achieved |
 | Grid Size Convergence Check | Verify current grid size is sufficient |
 | Boundary Hit Analysis | Verify the current boundary setting are sufficient to include all equilibrium states value |
 | Economic decision analysis | Verify the policy from the value function make economic sense |
@@ -277,19 +278,19 @@ The VFI solutions provide benchmark for value functions and company economic beh
 
 
 ### Deep Learning Effectiveness Assessment
-The effectiveness of deep learning solution are defined with the following metrics:
+The effectiveness of the deep learning solution is defined with the following metrics:
 
 | Metric | Description |
 |--------|-------------|
 | Mean Absolute Error | Average absolute deviation from VFI solution |
 | Max Absolute Error | Worst-case deviation from VFI solution across state space |
 | Mean Absolute Percentage Error | DL solution deviation divided by states value |
-| Total life time reward diviation | Simulation results deviation from theoratical value  |
+| Total life time reward deviation | Simulation results deviation from theoretical value  |
 | Bellman Residual | Violation of Bellman equation |
-| Euler Residual | For basic model using FOC constrain Euler residual is enabled |
+| Euler Residual | For basic model using FOC constraint Euler residual is enabled |
 | Recovery rate of default states | For risky model f1 score is used to measure accuracy of identifying default states |
-| Risky Bound Price Error | For risky model we test whether dl produced risky bound price align with VFI benchmark |
-
+| Risky Bound Price Error | For risky model we test whether dl produced Risky Bond Price align with VFI benchmark |
+| Ergodic Moment Comparison | Compare mean(K), std(K), autocorr(K) under both policies |
 
 ## Running Tests
 
