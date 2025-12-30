@@ -247,9 +247,11 @@ python effectiveness_dl_risky.py
 ### Ground Truth Validation
 The VFI solutions provide benchmark value functions and policy functions. Validation includes:
 
-Convergence Check: Verify VFI has converged within tolerance
-Boundary Hit Analysis: Ensure simulated paths stay within the grid
-Policy Monotonicity: Check economic reasonableness of policies
+| Check | Description |
+|-------|-------------|
+| Convergence Check | Verify VFI has converged within tolerance |
+| Boundary Hit Analysis | Ensure simulated paths stay within the grid |
+| Policy Monotonicity | Check economic reasonableness of policies |
 
 
 ### Deep Learning Effectiveness Assessment
