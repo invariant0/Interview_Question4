@@ -67,7 +67,7 @@ A corporate finance model with risky debt and endogenous default options.
 ```bash
 # Clone the repository
 git clone https://github.com/invariant0/Interview_Question4.git
-cd econ-models
+cd Interview_Question4
 
 # Create virtual environment
 python -m venv venv
@@ -258,10 +258,12 @@ The effectiveness scripts evaluate:
 | Metric | Description |
 |--------|-------------|
 | Mean Absolute Error | Average absolute deviation from VFI solution |
-| Max Absolute Error | Worst-case deviation across state space |
-| R² Score | Explained variance relative to VFI values |
-| Policy Accuracy | Agreement on optimal actions |
+| Max Absolute Error | Worst-case deviation from VFI solution across state space |
+| Mean Absolute Percentage Error | DL solution deviation divided by value |
+| Total life time reward diviation | Simulation results deviation from theoratical value  |
 | Bellman Residual | Violation of Bellman equation |
+| Euler Residual | For basic model using FOC constrain Euler residual is enabled |
+| Recovery rate of default states | For risky model f1 score is used to measure accuracy of identifying default states |
 
 
 ## Running Tests
