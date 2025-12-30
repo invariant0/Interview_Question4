@@ -76,13 +76,6 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install package in development mode
 pip install -e .
 
-Requirements
-Create a requirements.txt file with:
-
-tensorflow>=2.10.0
-tensorflow-probability>=0.18.0
-numpy>=1.21.0
-
 ```
 
 ## Project Structure
@@ -139,8 +132,8 @@ econ_models/
 │   └── checkpoints.py                # Model checkpoint utilities
 │
 ├── tests/                            # Testing scripts
-│   ├── effectiveness_dl_basic.py    # Basic model DL evaluation
-│   └── effectiveness_dl_risky.py    # Risky model DL evaluation
+│   ├── unit    # unit test
+│   └── integration    # integration test
 │
 ├── hyperparam/                       # Configuration files
 │   ├── prefixed/                     # User-defined parameters
@@ -210,10 +203,10 @@ Run the VFI solver to discover boundaries and generate ground truth solutions:
 
 ```bash
 # Solve Basic RBC Model
-python -m econ_models.cli.solve_vfi --model basic
+solve_vfi --model basic
 
 # Solve Risky Debt Model
-python -m econ_models.cli.solve_vfi --model risky
+solve_vfi --model risky
 ```
 This will:
 
@@ -226,10 +219,10 @@ Train neural network approximations using the validated boundaries:
 
 ```bash
 # Train Basic Model
-python -m econ_models.cli.train_dl --model basic
+train-dl --model basic
 
 # Train Risky Debt Model
-python -m econ_models.cli.train_dl --model risky
+train-dl --model risky
 ```
 
 Training features:
@@ -244,10 +237,10 @@ Evaluate deep learning solution quality against VFI ground truth:
 
 ```bash
 # Validate Basic Model
-python tests/effectiveness_dl_basic.py
+python effectiveness_dl_basic.py
 
 # Validate Risky Debt Model
-python tests/effectiveness_dl_risky.py
+python effectiveness_dl_risky.py
 ```
 
 ## Testing and Validation
@@ -262,13 +255,16 @@ Policy Monotonicity: Check economic reasonableness of policies
 ### Deep Learning Effectiveness Assessment
 The effectiveness scripts evaluate:
 
-Metric	Description
-Mean Absolute Error	Average absolute deviation from VFI solution
-Max Absolute Error	Worst-case deviation across state space
-R² Score	Explained variance relative to VFI values
-Policy Accuracy	Agreement on optimal actions
-Bellman Residual	Violation of Bellman equation
-Running Tests
+| Metric | Description |
+|--------|-------------|
+| Mean Absolute Error | Average absolute deviation from VFI solution |
+| Max Absolute Error | Worst-case deviation across state space |
+| R² Score | Explained variance relative to VFI values |
+| Policy Accuracy | Agreement on optimal actions |
+| Bellman Residual | Violation of Bellman equation |
+
+
+## Running Tests
 
 ```bash
 # Run all validation tests
