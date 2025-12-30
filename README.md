@@ -251,7 +251,7 @@ The VFI solutions provide benchmark value functions and policy functions. Valida
 |-------|-------------|
 | Convergence Check | Verify VFI has converged within tolerance |
 | Boundary Hit Analysis | Ensure simulated paths stay within the grid |
-| Policy Monotonicity | Check economic reasonableness of policies |
+| 3D value surface | Check value variation across state space |
 
 
 ### Deep Learning Effectiveness Assessment
