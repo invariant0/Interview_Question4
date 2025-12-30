@@ -32,7 +32,7 @@ This repository provides two complementary approaches for solving infinite-horiz
 
 ### Basic Investment Model
 
-A standard Real Business Cycle model with capital adjustment costs.
+A standard basic investment model with capital adjustment costs.
 
 | Component | Description |
 |-----------|-------------|
@@ -248,6 +248,7 @@ Training features:
 
 **For Basic Model**  
   We choose to use AiO construction with bellman residual and FOC residual minimization, and seperate value net and policy net for the gradient is easy to compute and avoid conflict in gradient decent.
+  
 **For Risky Model**  
   We choose direct search maximization using MC simulation sample size 30 to approximate the maximization opeartion in the RHS of the bellman equation. To make the training stable we choose to use target net with gradual update together with curriculum sampling methods which focuses on states that are not likely to default and with plenty of well structured gradients signal to learn from and gradually increase the range of the state space and action space, details of the implementation and rational will be on the report. 
 
