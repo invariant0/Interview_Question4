@@ -256,14 +256,6 @@ train-dl --model risky
 ### Step 4: Validate Results
 Evaluate deep learning solution quality against VFI ground truth:
 
-```bash
-# Validate Basic Model
-python effectiveness_dl_basic.py
-
-# Validate Risky Debt Model
-python effectiveness_dl_risky.py
-```
-
 ## Testing and Validation
 ### Ground Truth Validation
 The VFI solutions provide benchmark for value functions and company economic behavior under optimal strategy. Validation includes:
@@ -296,10 +288,16 @@ The effectiveness of the deep learning solution is defined with the following me
 
 ```bash
 # Run all validation tests
-python -m pytest tests/
+python -m unittest discover -s tests/unit
 
-# Run specific effectiveness evaluation
-python tests/effectiveness_dl_basic.py
-python tests/effectiveness_dl_risky.py
+# validate benchmark ground truth
+python ./validate_vfi_basic/validate_vfi_basic.py
+python ./validate_vfi_risky/boundary_simulation.py
+python ./validate_vfi_risky/grid_convergence.py
+python ./validate_vfi_risky/visualization.py
+
+# evaluate effectivenss of dl solution
+python effectiveness_dl_basic.py
+python effectiveness_dl_risky.py
 
 ```
