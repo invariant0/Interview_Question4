@@ -1,6 +1,6 @@
 # Economic Models: Value Function Iteration and Deep Learning Solvers
 
-A Python framework for solving dynamic corporate finance models using both traditional Value Function Iteration (VFI) and modern deep learning approaches. This repository implements solvers for the Basic RBC Model and the Risky Debt Model with endogenous default.
+A Python framework for solving dynamic corporate finance models using both traditional Value Function Iteration (VFI) and modern deep learning approaches. This repository implements solvers for the Basic Investment Model and the Risky Debt Investment Model with endogenous default.
 
 ---
 
