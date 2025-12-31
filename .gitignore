@@ -1,5 +1,5 @@
 # Large folders - exclude from git
-checkpoints/
+# checkpoints/
 tf/
 build/
 archive/
@@ -18,7 +18,7 @@ __pycache__/
 # result_effectiveness_dl_risky/
 
 # Ground truth files (large numpy files)
-ground_truth/*.npz
+# ground_truth/*.npz
 
 # Auto-generated boundaries (keep the folder structure)
 # hyperparam/autogen/*.json
