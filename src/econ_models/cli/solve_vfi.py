@@ -34,6 +34,8 @@ SAVE_BOUNDARY_BASIC = os.path.join(BASE_DIR, "hyperparam/autogen/bounds_basic.js
 SAVE_BOUNDARY_RISKY = os.path.join(BASE_DIR, "hyperparam/autogen/bounds_risky.json")
 SAVE_GROUND_TRUTH_BASIC = os.path.join(BASE_DIR, "ground_truth/basic_model_vfi_results.npz")
 SAVE_GROUND_TRUTH_RISKY = os.path.join(BASE_DIR, "ground_truth/risky_debt_model_vfi_results.npz")
+os.makedirs(os.path.dirname(SAVE_GROUND_TRUTH_BASIC), exist_ok=True)
+os.makedirs(os.path.dirname(SAVE_GROUND_TRUTH_RISKY), exist_ok=True)
 
 # Configure logging
 logging.basicConfig(

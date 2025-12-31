@@ -239,10 +239,10 @@ Run the VFI solver to discover boundaries and generate ground truth solutions:
 
 ```bash
 # Solve Basic RBC Model
-solve_vfi --model basic
+solve-vfi --model basic
 
 # Solve Risky Debt Model
-solve_vfi --model risky
+solve-vfi --model risky
 ```
 This will:
 
@@ -250,6 +250,8 @@ This will:
 
 2. Save boundaries to hyperparam/autogen/bounds_<model>.json
 Compute and save ground truth value functions to ground_truth/
+
+alternativly you can download the ground_truth and put it in the root directory of the project here: https://drive.google.com/drive/folders/1QDq4vC87LEuFycMqK76y6bkvZx4UcpPM?usp=drive_link
 
 ### Step 3: Train Deep Learning Models
 Train neural network approximations using the validated boundaries:
@@ -261,6 +263,8 @@ train-dl --model basic
 # Train Risky Debt Model
 train-dl --model risky
 ```
+
+alternatively you can download the checkpoint and put it in the root directory of the project here: https://drive.google.com/drive/folders/14y0NWKdKzn-BYPP4wDecb7Z1oYXCUZpv?usp=drive_link
 
 ### Training features:
 

@@ -14,14 +14,16 @@ dependencies = [
     "tf-keras", 
     "numpy>=1.23.0",
     "tensorflow[and-cuda]",
+    "matplotlib",
+    "seaborn",
+    "scipy"
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
     "black",
-    "flake8",
-    "matplotlib"
+    "flake8"
 ]
 
 # This creates command-line shortcuts for your runners
@@ -38,4 +40,3 @@ testpaths = [
 pythonpath = [
     "src"
 ]
-
