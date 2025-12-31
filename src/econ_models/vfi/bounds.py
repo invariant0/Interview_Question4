@@ -33,6 +33,8 @@ class BoundaryFinder:
         threshold: Maximum acceptable boundary hit frequency.
         expansion_factor: Multiplier for boundary expansion.
         margin: Safety margin multiplier for final bounds.
+        n_steps: Number of simulation steps per batch.
+        n_batches: Number of simulation batches.
     """
 
     def __init__(
@@ -40,7 +42,10 @@ class BoundaryFinder:
         params: EconomicParams,
         config: GridConfig,
         threshold: float = 0.01,
-        margin: float = 1.1
+        margin: float = 1.1,
+        n_steps: int = 1000,
+        n_batches: int = 1000,
+        seed: int | None = None
     ) -> None:
         """
         Initialize the boundary finder.
@@ -50,12 +55,18 @@ class BoundaryFinder:
             config: Grid configuration.
             threshold: Maximum acceptable boundary hit rate.
             margin: Safety margin multiplier (e.g., 1.1 = 10% padding).
+            n_steps: Number of simulation steps per batch.
+            n_batches: Number of simulation batches for statistics.
+            seed: Random seed for reproducibility.
         """
         self.params = params
         self.config = config
         self.threshold = threshold
         self.expansion_factor = 1.25
         self.margin = margin
+        self.n_steps = n_steps
+        self.n_batches = n_batches
+        self.seed = seed
 
     def find_basic_bounds(self) -> Dict[str, Any]:
         """
@@ -81,7 +92,12 @@ class BoundaryFinder:
 
             model = BasicModelVFI(self.params, self.config, k_bounds=(k_min, k_max))
             res = model.solve()
-            stats = model.simulate(res['V'], t_steps=2000)
+            history, stats = model.simulate(
+                res['V'],
+                n_steps=self.n_steps,
+                n_batches=self.n_batches,
+                seed=self.seed
+            )
 
             expand = False
             if stats['min_hit_pct'] > self.threshold:
@@ -159,7 +175,12 @@ class BoundaryFinder:
                 b_bounds=(b_min, b_max)
             )
             res = model.solve()
-            stats = model.simulate(res['V'], t_steps=2000)
+            history, stats = model.simulate(
+                res['V'],
+                n_steps=self.n_steps,
+                n_batches=self.n_batches,
+                seed=self.seed
+            )
 
             expand = self._check_and_expand_risky_bounds(
                 stats,

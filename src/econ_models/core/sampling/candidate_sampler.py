@@ -29,8 +29,8 @@ class CandidateSampler:
         b_current: Tensor,
         config: DeepLearningConfig,
         progress: Optional[tf.Tensor] = None,
-        std_ratio_max: float = 0.3,
-        std_ratio_min: float = 0.15,
+        std_ratio_max: float = 0.4,
+        std_ratio_min: float = 0.1,
         uniform_prob_initial: float = 1.0,
         uniform_prob_final: float = 0.0
     ) -> Tuple[tf.Tensor, tf.Tensor]:

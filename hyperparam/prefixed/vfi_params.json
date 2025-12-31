@@ -1,6 +1,6 @@
 {
     "basic": {
-        "n_capital": 200,
+        "n_capital": 300,
         "n_productivity": 15,
         "n_debt": 0,
         "tauchen_width": 3.0,

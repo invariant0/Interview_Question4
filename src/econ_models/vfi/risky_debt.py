@@ -21,7 +21,7 @@ from econ_models.config.economic_params import EconomicParams
 from econ_models.config.vfi_config import GridConfig
 from econ_models.vfi.engine import VFIEngine
 from econ_models.vfi.grids.grid_builder import GridBuilder
-from econ_models.vfi.simulation.simulator import Simulator
+from econ_models.vfi.simulation.simulator import Simulator, SimulationHistory
 from econ_models.core.types import TENSORFLOW_DTYPE, Array
 from econ_models.econ import (
     ProductionFunctions,
@@ -288,17 +288,22 @@ class RiskyDebtModelVFI:
     def simulate(
         self,
         value_function: Array,
-        t_steps: int = 1000
-    ) -> Dict[str, float]:
+        n_steps: int = 1000,
+        n_batches: int = 1000,
+        seed: int | None = None
+    ) -> Tuple[SimulationHistory, Dict[str, float]]:
         """
         Simulate economy to check grid boundary hits.
 
         Args:
             value_function: Converged value function array.
-            t_steps: Number of simulation periods.
+            n_steps: Number of simulation periods per batch.
+            n_batches: Number of independent simulation batches.
+            seed: Random seed for reproducibility.
 
         Returns:
-            Dictionary with boundary hit percentages.
+            Tuple of (SimulationHistory with complete trajectories,
+                     statistics dictionary with boundary hit percentages).
         """
         v_tensor = tf.constant(value_function, dtype=TENSORFLOW_DTYPE)
         pol_k, pol_b = self.get_policy_indices(v_tensor)
@@ -310,7 +315,9 @@ class RiskyDebtModelVFI:
             self.config.n_capital,
             self.config.n_debt,
             self.config.n_productivity,
-            t_steps
+            n_steps=n_steps,
+            n_batches=n_batches,
+            seed=seed
         )
 
     def solve(

@@ -6,6 +6,6 @@ This package provides simulation capabilities for testing
 grid boundaries and policy function behavior.
 """
 
-from econ_models.vfi.simulation.simulator import Simulator
+from econ_models.vfi.simulation.simulator import Simulator, SimulationHistory
 
-__all__ = ['Simulator']
+__all__ = ['Simulator', 'SimulationHistory']

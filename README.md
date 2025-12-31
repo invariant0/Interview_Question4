@@ -197,6 +197,7 @@ Ground truth generation: VFI solutions serve as benchmarks for evaluating deep l
 Create or modify the JSON configuration files in hyperparam/prefixed/econ_params_*.json:
 
 ```bash
+# basic model economic settings
 {
     "discount_factor": 0.96,
     "capital_share": 0.70,
@@ -209,6 +210,22 @@ Create or modify the JSON configuration files in hyperparam/prefixed/econ_params
     "equity_issuance_cost_linear": 0.0,
     "default_cost_proportional": 0.0,
     "corporate_tax_rate": 0.0,
+    "risk_free_rate": 0.04,
+    "collateral_recovery_fraction": 0.5
+}
+# risky model economic settings
+{
+    "discount_factor": 0.96,
+    "capital_share": 0.40,
+    "depreciation_rate": 0.15,
+    "productivity_persistence": 0.70,
+    "productivity_std_dev": 0.15,
+    "adjustment_cost_convex": 0.01,
+    "adjustment_cost_fixed": 0.0,
+    "equity_issuance_cost_fixed": 0.08,
+    "equity_issuance_cost_linear": 0.028,
+    "default_cost_proportional": 0.15,
+    "corporate_tax_rate": 0.2,
     "risk_free_rate": 0.04,
     "collateral_recovery_fraction": 0.5
 }
@@ -291,13 +308,11 @@ The effectiveness of the deep learning solution is defined with the following me
 python -m unittest discover -s tests/unit
 
 # validate benchmark ground truth
-python ./validate_vfi_basic/validate_vfi_basic.py
-python ./validate_vfi_risky/boundary_simulation.py
-python ./validate_vfi_risky/grid_convergence.py
-python ./validate_vfi_risky/visualization.py
+python ./validate_basic_model.py
+python ./validate_risky_model.py
 
 # evaluate effectivenss of dl solution
-python effectiveness_dl_basic.py
-python effectiveness_dl_risky.py
+python ./effectiveness_dl_basic.py
+python ./effectiveness_dl_risky.py
 
 ```
