@@ -51,7 +51,7 @@ dist/
 logs/
 
 # TensorFlow/Keras specific
-*.h5
-*.weights.h5
+# *.h5
+# *.weights.h5
 *.keras
 saved_model/
