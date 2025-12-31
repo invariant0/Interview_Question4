@@ -251,7 +251,7 @@ This will:
 2. Save boundaries to hyperparam/autogen/bounds_<model>.json
 Compute and save ground truth value functions to ground_truth/
 
-alternativly you can download the ground_truth and put it in the root directory of the project here: https://drive.google.com/drive/folders/1QDq4vC87LEuFycMqK76y6bkvZx4UcpPM?usp=drive_link
+Alternatively you can download the ground_truth and put it in the ./ground_truth directory of the project here: https://drive.google.com/drive/folders/1QDq4vC87LEuFycMqK76y6bkvZx4UcpPM?usp=drive_link
 
 ### Step 3: Train Deep Learning Models
 Train neural network approximations using the validated boundaries:
@@ -264,7 +264,7 @@ train-dl --model basic
 train-dl --model risky
 ```
 
-alternatively you can download the checkpoint and put it in the root directory of the project here: https://drive.google.com/drive/folders/14y0NWKdKzn-BYPP4wDecb7Z1oYXCUZpv?usp=drive_link
+Alternatively you can download the checkpoint and put it in the ./ground_truth directory of the project here: https://drive.google.com/drive/folders/14y0NWKdKzn-BYPP4wDecb7Z1oYXCUZpv?usp=drive_link
 
 ### Training features:
 
