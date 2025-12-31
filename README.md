@@ -306,6 +306,7 @@ The effectiveness of the deep learning solution is defined with the following me
 ```bash
 # Run all validation tests
 python -m unittest discover -s tests/unit
+python -m unittest discover -s tests/integration
 
 # validate benchmark ground truth
 python ./validate_basic_model.py

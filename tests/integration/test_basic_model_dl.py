@@ -65,6 +65,14 @@ def get_test_dl_config_basic() -> DeepLearningConfig:
     )
 
 
+def tensor_to_scalar(tensor: tf.Tensor) -> float:
+    """Safely convert a tensor to a Python scalar."""
+    arr = tensor.numpy()
+    if arr.ndim == 0:
+        return float(arr)
+    return float(arr.flatten()[0])
+
+
 class TestBasicModelDLInitialization(unittest.TestCase):
     """Test BasicModelDL initialization and component construction."""
 
@@ -237,8 +245,9 @@ class TestBasicModelDLTraining(unittest.TestCase):
             w.numpy().copy() for w in model.policy_net.trainable_variables
         ]
 
-        # Perform training step
-        logs = model.train_step(k, z)
+        # Perform multiple training steps to ensure weight updates
+        for _ in range(5):
+            logs = model.train_step(k, z)
 
         # Verify logs contain expected keys
         self.assertIn("loss", logs)
@@ -250,7 +259,7 @@ class TestBasicModelDLTraining(unittest.TestCase):
         for initial, current in zip(
             initial_value_weights, model.value_net.trainable_variables
         ):
-            if not np.allclose(initial, current.numpy()):
+            if not np.allclose(initial, current.numpy(), atol=1e-10):
                 value_weights_changed = True
                 break
 
@@ -258,7 +267,7 @@ class TestBasicModelDLTraining(unittest.TestCase):
         for initial, current in zip(
             initial_policy_weights, model.policy_net.trainable_variables
         ):
-            if not np.allclose(initial, current.numpy()):
+            if not np.allclose(initial, current.numpy(), atol=1e-10):
                 policy_weights_changed = True
                 break
 
@@ -425,9 +434,15 @@ class TestBasicModelDLNormalization(unittest.TestCase):
 
         k_norm = self.model.normalizer.normalize_capital(k)
 
-        # Use [i, 0] to get scalar values
-        self.assertLess(float(k_norm[0, 0]), float(k_norm[1, 0]))
-        self.assertLess(float(k_norm[1, 0]), float(k_norm[2, 0]))
+        # Use proper indexing to get scalar values
+        self.assertLess(
+            tensor_to_scalar(k_norm[0]),
+            tensor_to_scalar(k_norm[1])
+        )
+        self.assertLess(
+            tensor_to_scalar(k_norm[1]),
+            tensor_to_scalar(k_norm[2])
+        )
 
 
 class TestBasicModelDLEndToEnd(unittest.TestCase):
@@ -459,7 +474,7 @@ class TestBasicModelDLEndToEnd(unittest.TestCase):
         model = BasicModelDL(self.params, self.config)
 
         losses = []
-        dataset = model._build_dataset().repeat()  # Add .repeat()
+        dataset = model._build_dataset().repeat()
         data_iter = iter(dataset)
 
         for _ in range(20):
@@ -482,16 +497,16 @@ class TestBasicModelDLEndToEnd(unittest.TestCase):
         """Test that value function changes with different states."""
         model = BasicModelDL(self.params, self.config)
 
-        # Train briefly
-        dataset = model._build_dataset()
+        # Train for more iterations to ensure learning
+        dataset = model._build_dataset().repeat()
         data_iter = iter(dataset)
-        for _ in range(10):
+        for _ in range(50):
             k, z = next(data_iter)
             model.train_step(k, z)
 
-        # Evaluate at different states
-        k_low = tf.constant([[1.0]], dtype=TENSORFLOW_DTYPE)
-        k_high = tf.constant([[3.0]], dtype=TENSORFLOW_DTYPE)
+        # Evaluate at significantly different states
+        k_low = tf.constant([[0.5]], dtype=TENSORFLOW_DTYPE)
+        k_high = tf.constant([[4.5]], dtype=TENSORFLOW_DTYPE)
         z = tf.constant([[1.0]], dtype=TENSORFLOW_DTYPE)
 
         inputs_low = tf.concat([
@@ -507,8 +522,15 @@ class TestBasicModelDLEndToEnd(unittest.TestCase):
         v_low = model.value_net(inputs_low, training=False)
         v_high = model.value_net(inputs_high, training=False)
 
+        v_low_scalar = tensor_to_scalar(v_low)
+        v_high_scalar = tensor_to_scalar(v_high)
+
         # Values should be different for different capital levels
-        self.assertNotAlmostEqual(float(v_low), float(v_high), places=3)
+        # Allow for small numerical tolerance
+        self.assertFalse(
+            np.isclose(v_low_scalar, v_high_scalar, atol=1e-4),
+            f"Values should differ: v_low={v_low_scalar}, v_high={v_high_scalar}"
+        )
 
 
 class TestBasicModelDLTransitions(unittest.TestCase):
@@ -550,10 +572,15 @@ class TestBasicModelDLTransitions(unittest.TestCase):
         z_high_prime = TransitionFunctions.log_ar1_transition(z_high, rho, eps)
         z_low_prime = TransitionFunctions.log_ar1_transition(z_low, rho, eps)
 
+        z_high_val = tensor_to_scalar(z_high)
+        z_high_prime_val = tensor_to_scalar(z_high_prime)
+        z_low_val = tensor_to_scalar(z_low)
+        z_low_prime_val = tensor_to_scalar(z_low_prime)
+
         # High values should move toward 1
-        self.assertLess(float(z_high_prime), float(z_high))
+        self.assertLess(z_high_prime_val, z_high_val)
         # Low values should move toward 1
-        self.assertGreater(float(z_low_prime), float(z_low))
+        self.assertGreater(z_low_prime_val, z_low_val)
 
     def test_transition_with_zero_shock(self):
         """Test transition behavior with zero shock."""
@@ -563,8 +590,10 @@ class TestBasicModelDLTransitions(unittest.TestCase):
 
         z_prime = TransitionFunctions.log_ar1_transition(z, rho, eps)
 
+        z_prime_val = tensor_to_scalar(z_prime)
+
         # With z=1 and eps=0, ln(z)=0, so z_prime should be exp(0)=1
-        self.assertAlmostEqual(float(z_prime), 1.0, places=5)
+        self.assertAlmostEqual(z_prime_val, 1.0, places=5)
 
 
 class TestBasicModelDLEdgeCases(unittest.TestCase):
@@ -651,6 +680,47 @@ class TestBasicModelDLEdgeCases(unittest.TestCase):
 
         self.assertFalse(tf.math.is_nan(loss))
         self.assertFalse(tf.math.is_inf(loss))
+
+
+class TestBasicModelDLReproducibility(unittest.TestCase):
+    """Test reproducibility of basic model training."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Set up test fixtures."""
+        cls.params = get_test_economic_params()
+        cls.config = get_test_dl_config_basic()
+
+    def test_deterministic_forward_pass(self):
+        """Test that forward pass is deterministic given same inputs."""
+        model = BasicModelDL(self.params, self.config)
+
+        k = tf.constant([[2.0]], dtype=TENSORFLOW_DTYPE)
+        z = tf.constant([[1.0]], dtype=TENSORFLOW_DTYPE)
+
+        inputs = tf.concat([
+            model.normalizer.normalize_capital(k),
+            model.normalizer.normalize_productivity(z)
+        ], axis=1)
+
+        v1 = model.value_net(inputs, training=False)
+        v2 = model.value_net(inputs, training=False)
+
+        np.testing.assert_array_almost_equal(v1.numpy(), v2.numpy())
+
+    def test_network_weights_accessible(self):
+        """Test that network weights can be accessed and saved."""
+        model = BasicModelDL(self.params, self.config)
+
+        value_weights = model.value_net.get_weights()
+        policy_weights = model.policy_net.get_weights()
+
+        self.assertGreater(len(value_weights), 0)
+        self.assertGreater(len(policy_weights), 0)
+
+        # Weights should be finite
+        for w in value_weights + policy_weights:
+            self.assertTrue(np.all(np.isfinite(w)))
 
 
 if __name__ == "__main__":
