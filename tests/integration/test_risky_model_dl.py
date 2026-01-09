@@ -365,11 +365,14 @@ class TestRiskyModelDLOptimization(unittest.TestCase):
             dtype=TENSORFLOW_DTYPE
         )
 
-        k_opt, b_opt, q_opt = self.model._optimize_next_state(k, b, z)
+        # FIX: Unpack 4 values instead of 3
+        k_opt, b_opt, q_opt, v_opt = self.model._optimize_next_state(k, b, z)
 
         self.assertEqual(k_opt.shape, (batch_size, 1))
         self.assertEqual(b_opt.shape, (batch_size, 1))
         self.assertEqual(q_opt.shape, (batch_size, 1))
+        # Optional: Check v_opt shape
+        self.assertEqual(v_opt.shape, (batch_size, 1))
 
         self.assertFalse(tf.reduce_any(tf.math.is_nan(k_opt)))
         self.assertFalse(tf.reduce_any(tf.math.is_nan(b_opt)))
@@ -398,7 +401,8 @@ class TestRiskyModelDLOptimization(unittest.TestCase):
             dtype=TENSORFLOW_DTYPE
         )
 
-        k_opt, _, _ = self.model._optimize_next_state(k, b, z)
+        # FIX: Unpack 4 values (use _ for ignored ones)
+        k_opt, _, _, _ = self.model._optimize_next_state(k, b, z)
 
         self.assertTrue(tf.reduce_all(k_opt > 0))
 
@@ -425,7 +429,8 @@ class TestRiskyModelDLOptimization(unittest.TestCase):
             dtype=TENSORFLOW_DTYPE
         )
 
-        _, b_opt, _ = self.model._optimize_next_state(k, b, z)
+        # FIX: Unpack 4 values
+        _, b_opt, _, _ = self.model._optimize_next_state(k, b, z)
 
         self.assertTrue(tf.reduce_all(b_opt >= 0))
 
@@ -452,7 +457,8 @@ class TestRiskyModelDLOptimization(unittest.TestCase):
             dtype=TENSORFLOW_DTYPE
         )
 
-        _, _, q_opt = self.model._optimize_next_state(k, b, z)
+        # FIX: Unpack 4 values
+        _, _, q_opt, _ = self.model._optimize_next_state(k, b, z)
 
         self.assertTrue(tf.reduce_all(q_opt > 0))
 

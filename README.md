@@ -110,6 +110,7 @@ econ-dl/
 │       │   │   └── loss_calculator.py
 │       │   ├── basic.py
 │       │   └── risky.py
+│       │   └── risky_upgrade.py
 │       │
 │       ├── econ/
 │       │   ├── adjustment_costs.py
@@ -216,15 +217,15 @@ Create or modify the JSON configuration files in hyperparam/prefixed/econ_params
 # risky model economic settings
 {
     "discount_factor": 0.96,
-    "capital_share": 0.40,
+    "capital_share": 0.6,
     "depreciation_rate": 0.15,
-    "productivity_persistence": 0.70,
+    "productivity_persistence": 0.7,
     "productivity_std_dev": 0.15,
-    "adjustment_cost_convex": 0.01,
-    "adjustment_cost_fixed": 0.0,
+    "adjustment_cost_convex": 0.4,
+    "adjustment_cost_fixed": 0.05,
     "equity_issuance_cost_fixed": 0.08,
     "equity_issuance_cost_linear": 0.028,
-    "default_cost_proportional": 0.15,
+    "default_cost_proportional": 0.3,
     "corporate_tax_rate": 0.2,
     "risk_free_rate": 0.04,
     "collateral_recovery_fraction": 0.5
@@ -262,6 +263,9 @@ train-dl --model basic
 
 # Train Risky Debt Model
 train-dl --model risky
+
+# Train Risky Debt Model with FB function
+train-dl --model risky_upgrade
 ```
 
 Alternatively you can download the checkpoint and put it in the ./ground_truth directory of the project here: https://drive.google.com/drive/folders/14y0NWKdKzn-BYPP4wDecb7Z1oYXCUZpv?usp=drive_link
@@ -273,6 +277,9 @@ Alternatively you can download the checkpoint and put it in the ./ground_truth d
 
 **For Risky Model**  
   We use direct grid search maximization with Monte Carlo simulation (sample size 30) to approximate the maximization operator on the right-hand side of the Bellman equation. To stabilize training, we employ: (1) a target network with gradual (soft) updates to prevent oscillation from bootstrapping, and (2) curriculum learning that initially focuses on states far from the default boundary—where the value function is smooth and gradients are well-defined—then gradually expands coverage to include states near default. Implementation details and rationale are provided in the full report.
+
+**For Risky Model upgrade**  
+  FB function enforce the limited liability, continouse in value function.
 
 ### Step 4: Validate Results
 Evaluate deep learning solution quality against VFI ground truth:
@@ -304,6 +311,8 @@ The effectiveness of the deep learning solution is defined with the following me
 | Recovery rate of default states | For risky model f1 score is used to measure accuracy of identifying default states |
 | Risky Bound Price Error | For risky model we test whether dl produced Risky Bond Price align with VFI benchmark |
 | Ergodic Moment Comparison | Compare mean(K), std(K), autocorr(K) under both policies |
+| Simulation based Comparison | Compare mean(K), std(K), autocorr(K) under both policies |
+
 
 ## Running Tests
 
@@ -317,7 +326,8 @@ python ./validate_basic_model.py
 python ./validate_risky_model.py
 
 # evaluate effectivenss of dl solution
-python ./effectiveness_dl_basic.py
-python ./effectiveness_dl_risky.py
+bash ./effectiveness_dl_basic.sh
+bash ./effectiveness_dl_risky.sh
+bash ./effectiveness_dl_risky_upgrade.sh
 
 ```
