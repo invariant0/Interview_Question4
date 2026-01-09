@@ -154,55 +154,64 @@ class Simulator:
         seed: int | None = None
     ) -> Tuple[SimulationHistory, Dict[str, float]]:
         """
-        Simulate risky debt model to check boundary hits.
-
-        Args:
-            pol_k: Policy function for capital, shape (n_k, n_b, n_z).
-            pol_b: Policy function for debt, shape (n_k, n_b, n_z).
-            transition_matrix: Markov transition matrix for productivity.
-            n_capital: Number of capital grid points.
-            n_debt: Number of debt grid points.
-            n_productivity: Number of productivity grid points.
-            n_steps: Number of simulation periods per batch.
-            n_batches: Number of independent simulation batches.
-            seed: Random seed for reproducibility.
-
-        Returns:
-            Tuple of (SimulationHistory, statistics dictionary).
+        Simulate risky debt model to check boundary hits and defaults.
+        Handles termination index -1.
         """
         rng = np.random.default_rng(seed)
         
-        # Allocate trajectory arrays: shape (n_batches, n_steps)
-        k_history = np.zeros((n_batches, n_steps), dtype=np.int32)
-        b_history = np.zeros((n_batches, n_steps), dtype=np.int32)
-        z_history = np.zeros((n_batches, n_steps), dtype=np.int32)
+        # Allocate trajectory arrays
+        # Initialize with a safe value, though they get overwritten immediately
+        k_history = np.ones((n_batches, n_steps), dtype=np.int32) * -1
+        b_history = np.ones((n_batches, n_steps), dtype=np.int32) * -1
+        z_history = np.ones((n_batches, n_steps), dtype=np.int32) * -1
         
-        # Sample initial states uniformly
+        # Sample initial states uniformly (ensure we don't start at -1)
         k_idx = rng.integers(0, n_capital, size=n_batches)
         b_idx = rng.integers(0, n_debt, size=n_batches)
         z_idx = rng.integers(0, n_productivity, size=n_batches)
-        
+
         for t in range(n_steps):
             # Record current state
+            
             k_history[:, t] = k_idx
             b_history[:, t] = b_idx
             z_history[:, t] = z_idx
+
+            # Identify active agents (those who have not defaulted)
+            # We assume -1 indicates a defaulted/terminated state
+            active_mask = (k_idx != -1) & (b_idx != -1)
             
-            # Apply policies: vectorized lookup
-            k_next = pol_k[k_idx, b_idx, z_idx]
-            b_next = pol_b[k_idx, b_idx, z_idx]
+            # Prepare next state arrays (default to current state)
+            # This ensures defaulted agents stay -1
+            k_next_step = k_idx.copy()
+            b_next_step = b_idx.copy()
+            
+            if np.any(active_mask):
+                # Extract indices for active agents
+                k_active = k_idx[active_mask]
+                b_active = b_idx[active_mask]
+                z_active = z_idx[active_mask]
+                
+                # Apply policies only for active agents
+                # If pol returns -1, that value gets assigned to k_next_step
+                k_next_vals = pol_k[k_active, b_active, z_active]
+                b_next_vals = pol_b[k_active, b_active, z_active]
+                
+                k_next_step[active_mask] = k_next_vals
+                b_next_step[active_mask] = b_next_vals
             
             # Update state
-            k_idx = k_next
-            b_idx = b_next
+            k_idx = k_next_step
+            b_idx = b_next_step
             
             # Transition productivity
+            # (Optional: stop transitioning Z for defaulted agents, 
+            # but keeping it running is harmless computationally)
             z_idx = np.array([
                 rng.choice(n_productivity, p=transition_matrix[z])
                 for z in z_idx
             ])
-        
-        # Build history object
+
         history = SimulationHistory(
             trajectories={
                 "k_idx": k_history,
@@ -212,8 +221,7 @@ class Simulator:
             n_batches=n_batches,
             n_steps=n_steps
         )
-        
-        # Calculate statistics from full history
+
         stats = Simulator._compute_risky_stats(
             k_history, b_history, n_capital, n_debt
         )
@@ -228,24 +236,35 @@ class Simulator:
         n_debt: int
     ) -> Dict[str, float]:
         """
-        Compute boundary hit statistics from capital and debt history.
-        
-        Args:
-            k_history: Capital index history, shape (n_batches, n_steps).
-            b_history: Debt index history, shape (n_batches, n_steps).
-            n_capital: Number of capital grid points.
-            n_debt: Number of debt grid points.
-            
-        Returns:
-            Dictionary with boundary hit percentages for each state.
+        Compute boundary hit statistics, accounting for defaults (-1).
         """
+        k_history = k_history[:, -500:]
+        b_history = b_history[:, -500:]
         total_obs = k_history.size
+        # Count defaults
+        default_count = np.sum(k_history == -1)
+
+        # Count boundary hits ONLY for non-defaulted observations
+        # We don't want a default (-1) to count as a min boundary hit (0) or wrap around
+        valid_mask = k_history != -1
+        valid_obs = np.sum(valid_mask)
         
+        if valid_obs == 0:
+            return {
+                "k_min": 0.0, "k_max": 0.0, "b_min": 0.0, "b_max": 0.0,
+                "default_rate": 1.0, "total_observations": total_obs
+            }
+
         stats = {
-            "k_min": np.sum(k_history == 0) / total_obs,
-            "k_max": np.sum(k_history == n_capital - 1) / total_obs,
-            "b_min": np.sum(b_history == 0) / total_obs,
-            "b_max": np.sum(b_history == n_debt - 1) / total_obs,
+            # Percentage of TOTAL observations that are defaults
+            "default_rate": default_count / total_obs,
+            
+            # Percentage of VALID observations hitting boundaries
+            "k_min": np.sum((k_history == 0) & valid_mask) / valid_obs,
+            "k_max": np.sum((k_history == n_capital - 1) & valid_mask) / valid_obs,
+            "b_min": np.sum((b_history == 0) & valid_mask) / valid_obs,
+            "b_max": np.sum((b_history == n_debt - 1) & valid_mask) / valid_obs,
+            
             "total_observations": total_obs
         }
         

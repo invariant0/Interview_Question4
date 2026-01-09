@@ -164,10 +164,13 @@ class RiskyDebtModelVFI:
             revenue, investment, adj_cost,
             b_curr, b_next, q_sched, self.params
         )
-
+        
         if enforce_constraint:
             flow = self._apply_collateral_constraint(flow, k_next, b_next)
-
+        # print("flow statistics:", tf.reduce_min(flow).numpy(), tf.reduce_max(flow).numpy(), tf.reduce_mean(flow).numpy())
+        # print("revenue statistics:", tf.reduce_min(revenue).numpy(), tf.reduce_max(revenue).numpy(), tf.reduce_mean(revenue).numpy())
+        # print("investment statistics:", tf.reduce_min(investment).numpy(), tf.reduce_max(investment).numpy(), tf.reduce_mean(investment).numpy())
+        # print("adj_cost statistics:", tf.reduce_min(adj_cost).numpy(), tf.reduce_max(adj_cost).numpy(), tf.reduce_mean(adj_cost).numpy())
         return flow
 
     def _apply_collateral_constraint(
@@ -186,7 +189,6 @@ class RiskyDebtModelVFI:
 
         valid_mask = b_next <= collateral_limit
         penalty = tf.cast(self.config.collateral_violation_penalty, TENSORFLOW_DTYPE)
-
         return tf.where(valid_mask, flow, penalty)
 
     def _update_prices(self, value_function: tf.Tensor) -> float:
@@ -254,22 +256,25 @@ class RiskyDebtModelVFI:
 
     def get_policy_indices(
         self,
-        value_function: tf.Tensor
+        value_function: tf.Tensor,
+        q_sched: tf.Tensor,
     ) -> Tuple[tf.Tensor, tf.Tensor]:
         """
         Extract optimal policy indices for capital and debt.
+
+        If the optimal choice results in a value lower than the default threshold,
+        returns -1 for both indices to signal a default/termination event.
 
         Args:
             value_function: Converged value function V.
 
         Returns:
-            Tuple of (k' indices, b' indices).
+            Tuple of (k' indices, b' indices). Indices are -1 if default occurs.
         """
         n_k = self.config.n_capital
         n_b = self.config.n_debt
         n_z = self.config.n_productivity
 
-        q_sched = tf.reshape(self.bond_prices, (1, 1, n_k, n_b, n_z))
         flow = self.compute_flow(q_sched, enforce_constraint=False)
 
         ev = tf.tensordot(value_function, self.P, axes=[[2], [1]])
@@ -277,48 +282,28 @@ class RiskyDebtModelVFI:
 
         # Flatten choice dims for argmax
         rhs_flat = tf.reshape(rhs, (n_k, n_b, n_k * n_b, n_z))
+        
+        # 1. Find the index of the best repayment strategy
         best_idx_flat = tf.argmax(rhs_flat, axis=2)
+
+        # 2. Find the value of that strategy (Value of Repaying)
+        best_val_flat = tf.reduce_max(rhs_flat, axis=2)
+
+        # 3. Determine where Default is preferable to Repayment
+        # If Value(Repay) <= Value(Default, approx 0), then Default.
+        is_default = best_val_flat <= self.config.v_default_eps
 
         # Unravel indices
         best_k_idx = best_idx_flat // n_b
         best_b_idx = best_idx_flat % n_b
 
-        return tf.cast(best_k_idx, tf.int32), tf.cast(best_b_idx, tf.int32)
+        # 4. Apply mask: Set indices to -1 where default occurs
+        termination_val = tf.constant(-1, dtype=tf.int64)
+        
+        final_k_idx = tf.where(is_default, termination_val, best_k_idx)
+        final_b_idx = tf.where(is_default, termination_val, best_b_idx)
 
-    def simulate(
-        self,
-        value_function: Array,
-        n_steps: int = 1000,
-        n_batches: int = 1000,
-        seed: int | None = None
-    ) -> Tuple[SimulationHistory, Dict[str, float]]:
-        """
-        Simulate economy to check grid boundary hits.
-
-        Args:
-            value_function: Converged value function array.
-            n_steps: Number of simulation periods per batch.
-            n_batches: Number of independent simulation batches.
-            seed: Random seed for reproducibility.
-
-        Returns:
-            Tuple of (SimulationHistory with complete trajectories,
-                     statistics dictionary with boundary hit percentages).
-        """
-        v_tensor = tf.constant(value_function, dtype=TENSORFLOW_DTYPE)
-        pol_k, pol_b = self.get_policy_indices(v_tensor)
-
-        return Simulator.simulate_risky_model(
-            pol_k.numpy(),
-            pol_b.numpy(),
-            self.P.numpy(),
-            self.config.n_capital,
-            self.config.n_debt,
-            self.config.n_productivity,
-            n_steps=n_steps,
-            n_batches=n_batches,
-            seed=seed
-        )
+        return tf.cast(final_k_idx, tf.int32), tf.cast(final_b_idx, tf.int32)
 
     def solve(
         self,
@@ -356,7 +341,7 @@ class RiskyDebtModelVFI:
             q_sched = tf.reshape(self.bond_prices, (1, 1, n_k, n_b, n_z))
             flow = self.compute_flow(q_sched, enforce_constraint=is_risk_free_iter)
             value_function = self.vfi_engine.run_vfi(value_function, flow)
-
+            # print("value_function statistics:", tf.reduce_min(value_function).numpy(), tf.reduce_max(value_function).numpy(), tf.reduce_mean(value_function).numpy())
             # Update bond prices
             err_q = self._update_prices(value_function)
 
@@ -381,3 +366,40 @@ class RiskyDebtModelVFI:
             raise ValueError(
                 "Please decrease n_b or n_k to <= 100 for memory constraints."
             )
+        
+    def simulate(
+        self,
+        value_function: Array,
+        q_sched: Array,
+        n_steps: int = 1000,
+        n_batches: int = 1000,
+        seed: int | None = None
+    ) -> Tuple[SimulationHistory, Dict[str, float]]:
+        """
+        Simulate economy to check grid boundary hits.
+
+        Args:
+            value_function: Converged value function array.
+            n_steps: Number of simulation periods per batch.
+            n_batches: Number of independent simulation batches.
+            seed: Random seed for reproducibility.
+
+        Returns:
+            Tuple of (SimulationHistory with complete trajectories,
+                     statistics dictionary with boundary hit percentages).
+        """
+        v_tensor = tf.constant(value_function, dtype=TENSORFLOW_DTYPE)
+        q_sched = tf.constant(q_sched, dtype=TENSORFLOW_DTYPE)
+        pol_k, pol_b = self.get_policy_indices(v_tensor, q_sched)
+
+        return Simulator.simulate_risky_model(
+            pol_k.numpy(),
+            pol_b.numpy(),
+            self.P.numpy(),
+            self.config.n_capital,
+            self.config.n_debt,
+            self.config.n_productivity,
+            n_steps=n_steps,
+            n_batches=n_batches,
+            seed=seed
+        )

@@ -1,0 +1,2 @@
+python ./effectiveness_testing/basic/effectiveness_dl_basic_value_func.py
+python ./effectiveness_testing/basic/effectiveness_dl_basic_policy_func.py

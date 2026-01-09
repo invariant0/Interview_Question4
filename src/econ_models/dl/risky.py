@@ -11,11 +11,12 @@ Example:
     >>> model.train()
 """
 
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Optional
+from dataclasses import dataclass
 
 import tensorflow as tf
 import tensorflow_probability as tfp
-
+import numpy as np
 from econ_models.config.dl_config import DeepLearningConfig
 from econ_models.config.economic_params import EconomicParams
 from econ_models.core.nets import NeuralNetFactory
@@ -31,7 +32,7 @@ from econ_models.core.standardize import StateSpaceNormalizer
 from econ_models.core.types import TENSORFLOW_DTYPE
 from econ_models.dl.training.dataset_builder import DatasetBuilder
 from econ_models.io.checkpoints import save_checkpoint_risky
-
+from econ_models.dl.simulation_history import RiskyDLSimulationHistory
 tfd = tfp.distributions
 
 class RiskyModelDL:
@@ -218,7 +219,8 @@ class RiskyModelDL:
         self,
         k_curr: tf.Tensor,
         b_curr: tf.Tensor,
-        z_curr: tf.Tensor
+        z_curr: tf.Tensor,
+        test_mode: bool = False,
     ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """
         Find optimal (k', b') by evaluating candidate grid.
@@ -234,12 +236,18 @@ class RiskyModelDL:
         batch_size = tf.shape(k_curr)[0]
         n_cand = self.config.mc_next_candidate_sample
         n_mc_samples = self.config.mc_sample_number_continuation_value
-
         # Generate candidates
-        k_cand, b_cand = CandidateSampler.sample_candidate(
-            batch_size, n_cand, k_curr, b_curr,
-            self.config, progress=self.training_progress
-        )
+        if test_mode:
+            n_cand = 2500
+            k_cand, b_cand = CandidateSampler.sample_candidate_grid(
+                batch_size, n_cand, k_curr, b_curr,
+                self.config, progress=1.0
+            )
+        else:
+            k_cand, b_cand = CandidateSampler.sample_candidate(
+                batch_size, n_cand, k_curr, b_curr,
+                self.config, progress=self.training_progress
+            )
         n_actual = tf.shape(k_cand)[1]
 
         # Estimate bond prices
@@ -309,7 +317,8 @@ class RiskyModelDL:
         beta = tf.cast(self.params.discount_factor, TENSORFLOW_DTYPE)
         rhs_cand = dividend + beta * expected_v_prime
         best_indices = tf.argmax(rhs_cand, axis=1)
-
+        # Get best value (for default checking)
+        best_val = tf.reduce_max(rhs_cand, axis=1)
         gather_indices = tf.stack(
             [tf.range(batch_size, dtype=tf.int64), best_indices], axis=1
         )
@@ -317,8 +326,8 @@ class RiskyModelDL:
         k_opt = tf.expand_dims(tf.gather_nd(k_cand, gather_indices), 1)
         b_opt = tf.expand_dims(tf.gather_nd(b_cand, gather_indices), 1)
         q_opt = tf.expand_dims(tf.gather_nd(q_cand, gather_indices), 1)
-
-        return k_opt, b_opt, q_opt
+        v_opt = tf.expand_dims(best_val, 1)
+        return k_opt, b_opt, q_opt, v_opt
 
     @tf.function
     def train_step(
@@ -340,7 +349,7 @@ class RiskyModelDL:
         """
         with tf.GradientTape() as tape:
             # Find optimal policy
-            k_opt, b_opt, q_opt = self._optimize_next_state(k, b, z)
+            k_opt, b_opt, q_opt, v_opt = self._optimize_next_state(k, b, z)
 
             # Calculate implied value target
             revenue = (
@@ -483,3 +492,218 @@ class RiskyModelDL:
             f"K': {avg_k_prime:.3f} | "
             f"B': {avg_b_prime:.3f}"
         )
+
+    def simulate(
+        self,
+        n_steps: int = 1000,
+        n_batches: int = 1000,
+        seed: Optional[int] = None,
+        sim_batch_size: int = 200
+    ) -> Tuple[RiskyDLSimulationHistory, Dict[str, float]]:
+        """
+        Simulate economy using the learned value function and candidate search.
+        
+        Includes default logic: if Value(Repay) <= epsilon, the firm defaults.
+        Defaulted firms are marked in the 'd' trajectory and stop operating.
+        """
+        if seed is not None:
+            tf.random.set_seed(seed)
+            np.random.seed(seed)
+
+        # Extract bounds (Keep these on GPU)
+        k_min = tf.constant(self.config.capital_min, dtype=TENSORFLOW_DTYPE)
+        k_max = tf.constant(self.config.capital_max, dtype=TENSORFLOW_DTYPE)
+        b_min = tf.constant(self.config.debt_min, dtype=TENSORFLOW_DTYPE)
+        b_max = tf.constant(self.config.debt_max, dtype=TENSORFLOW_DTYPE)
+        z_min = tf.constant(self.config.productivity_min, dtype=TENSORFLOW_DTYPE)
+        z_max = tf.constant(self.config.productivity_max, dtype=TENSORFLOW_DTYPE)
+
+        # 1. Define Distributions using TFD
+        dist_k_init = tfd.Uniform(low=k_min, high=k_max)
+        dist_b_init = tfd.Uniform(low=b_min, high=b_max)
+        dist_z_init = tfd.Uniform(low=z_min, high=z_max)
+
+        # Pre-allocate CPU memory (RAM) for results
+        k_hist_np = np.zeros((n_steps, n_batches), dtype=np.float32)
+        b_hist_np = np.zeros((n_steps, n_batches), dtype=np.float32)
+        z_hist_np = np.zeros((n_steps, n_batches), dtype=np.float32)
+        q_hist_np = np.zeros((n_steps, n_batches), dtype=np.float32)
+        d_hist_np = np.zeros((n_steps, n_batches), dtype=np.float32) # Default history
+
+        # Process simulation in chunks
+        for start_idx in range(0, n_batches, sim_batch_size):
+            end_idx = min(start_idx + sim_batch_size, n_batches)
+            current_batch_size = end_idx - start_idx
+            
+            print(f"Simulating batch {start_idx} to {end_idx}...")
+
+            # 2. Sample Initial States on GPU using TFD
+            k_curr = dist_k_init.sample(sample_shape=(current_batch_size, 1))
+            b_curr = dist_b_init.sample(sample_shape=(current_batch_size, 1))
+            z_curr = dist_z_init.sample(sample_shape=(current_batch_size, 1))
+            
+            # Track current default status for this batch (0=active, 1=defaulted)
+            # Once 1, stays 1.
+            current_defaults = tf.zeros((current_batch_size, 1), dtype=TENSORFLOW_DTYPE)
+
+            for t in range(n_steps):
+                # --- A. Offload to CPU ---
+                k_hist_np[t, start_idx:end_idx] = k_curr.numpy().flatten()
+                b_hist_np[t, start_idx:end_idx] = b_curr.numpy().flatten()
+                z_hist_np[t, start_idx:end_idx] = z_curr.numpy().flatten()
+                d_hist_np[t, start_idx:end_idx] = current_defaults.numpy().flatten()
+
+                # --- B. Compute Next Step (GPU) ---
+                # Get optimal policy AND the value of that policy
+                k_opt, b_opt, q_opt, v_opt = self._optimize_next_state(
+                    k_curr, b_curr, z_curr, test_mode=True
+                )
+
+                # --- C. Check Default Condition ---
+                # Logic referenced from VFI: if Value <= Epsilon, default.
+                # Note: We check if the *continuation* value is too low.
+                is_default_step = tf.cast(
+                    v_opt <= self.config.epsilon_value_default, TENSORFLOW_DTYPE
+                )
+                
+                # Update cumulative defaults: (already_defaulted OR newly_defaulted)
+                new_defaults = tf.maximum(current_defaults, is_default_step)
+                
+                # Store bond price (mask defaulted ones to 0 for clarity)
+                q_masked = tf.where(
+                    tf.cast(new_defaults, bool), 
+                    tf.zeros_like(q_opt), 
+                    q_opt
+                )
+                q_hist_np[t, start_idx:end_idx] = q_masked.numpy().flatten()
+
+                # Sample shock (GPU)
+                eps = self.shock_dist.sample(sample_shape=(current_batch_size, 1))
+                
+                # Transition productivity (GPU)
+                z_next = TransitionFunctions.log_ar1_transition(
+                    z_curr, self.params.productivity_persistence, eps
+                )
+
+                # --- D. Update State Pointers ---
+                # If defaulted, we effectively stop updating k and b (set to 0 or hold const)
+                # Here we set to 0.0 to indicate "exit" clearly in the data, similar to -1 in VFI.
+                active_mask = tf.cast(1.0 - new_defaults, bool)
+                
+                k_curr = tf.where(active_mask, k_opt, tf.zeros_like(k_opt))
+                b_curr = tf.where(active_mask, b_opt, tf.zeros_like(b_opt))
+                
+                # Z continues to evolve exogenously, or we can freeze it. 
+                # Evolving it is harmless and keeps array shapes consistent.
+                z_curr = z_next
+                
+                # Update default tracker
+                current_defaults = new_defaults
+                
+                # Cleanup
+                del q_opt, q_masked, eps, v_opt
+
+        # Build history object
+        history = RiskyDLSimulationHistory(
+            trajectories={
+                "k": k_hist_np,
+                "b": b_hist_np,
+                "z": z_hist_np,
+                "q": q_hist_np,
+                "d": d_hist_np,
+                "steady_state_capital": self.config.capital_steady_state,
+            },
+            n_batches=n_batches,
+            n_steps=n_steps
+        )
+
+        # Calculate statistics using NumPy (CPU)
+        stats = self._compute_simulation_stats(
+            k_hist_np, b_hist_np, z_hist_np, d_hist_np,
+            float(k_min), float(k_max),
+            float(b_min), float(b_max),
+            float(z_min), float(z_max)
+        )
+
+        return history, stats
+
+    def _compute_simulation_stats(
+        self,
+        k_history: np.ndarray,
+        b_history: np.ndarray,
+        z_history: np.ndarray,
+        d_history: np.ndarray,
+        k_min: float, k_max: float,
+        b_min: float, b_max: float,
+        z_min: float, z_max: float,
+        boundary_tolerance: float = 0.01
+    ) -> Dict[str, float]:
+        """
+        Compute boundary hit statistics from simulation history using NumPy.
+        Excludes defaulted observations from boundary stats.
+        """
+        total_obs = k_history.size
+        
+        # Calculate Default Rate
+        # d_history contains 1.0 for defaults.
+        total_defaults = np.sum(d_history == 1.0)
+        default_rate = total_defaults / total_obs
+
+        # Create mask for valid (active) observations
+        valid_mask = d_history == 0.0
+        valid_k = k_history[valid_mask]
+        valid_b = b_history[valid_mask]
+        valid_z = z_history[valid_mask]
+        
+        valid_obs_count = valid_k.size
+
+        # Calculate boundary thresholds
+        k_tol = boundary_tolerance * (k_max - k_min)
+        b_tol = boundary_tolerance * (b_max - b_min)
+        z_tol = boundary_tolerance * (z_max - z_min)
+
+        # Helper to calculate stats for a single variable
+        def calc_var_stats(history_subset, v_min, v_max, v_tol, prefix):
+            if history_subset.size == 0:
+                return {
+                    f"{prefix}_below_min_pct": 0.0,
+                    f"{prefix}_above_max_pct": 0.0,
+                    f"{prefix}_near_min_pct": 0.0,
+                    f"{prefix}_near_max_pct": 0.0,
+                    f"{prefix}_mean": 0.0,
+                    f"{prefix}_std": 0.0,
+                }
+
+            below_min = np.sum(history_subset < v_min)
+            above_max = np.sum(history_subset > v_max)
+            near_min = np.sum(history_subset < v_min + v_tol)
+            near_max = np.sum(history_subset > v_max - v_tol)
+            
+            # Denominator is valid_obs_count, not total_obs
+            return {
+                f"{prefix}_below_min_pct": float(below_min / valid_obs_count),
+                f"{prefix}_above_max_pct": float(above_max / valid_obs_count),
+                f"{prefix}_near_min_pct": float(near_min / valid_obs_count),
+                f"{prefix}_near_max_pct": float(near_max / valid_obs_count),
+                f"{prefix}_mean": float(np.mean(history_subset)),
+                f"{prefix}_std": float(np.std(history_subset)),
+                f"{prefix}_min_observed": float(np.min(history_subset)),
+                f"{prefix}_max_observed": float(np.max(history_subset)),
+            }
+
+        stats = {}
+        stats.update(calc_var_stats(valid_k, k_min, k_max, k_tol, "k"))
+        stats.update(calc_var_stats(valid_b, b_min, b_max, b_tol, "b"))
+        stats.update(calc_var_stats(valid_z, z_min, z_max, z_tol, "z"))
+
+        # Add bounds used for reference
+        stats.update({
+            "k_min_bound": k_min, "k_max_bound": k_max,
+            "b_min_bound": b_min, "b_max_bound": b_max,
+            "z_min_bound": z_min, "z_max_bound": z_max,
+            "total_observations": int(total_obs),
+            "valid_observations": int(valid_obs_count),
+            "default_rate": float(default_rate)
+        })
+
+        return stats

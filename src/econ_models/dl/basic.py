@@ -15,7 +15,7 @@ from typing import Tuple, Dict
 
 import tensorflow as tf
 import tensorflow_probability as tfp
-
+import numpy as np
 from econ_models.config.dl_config import DeepLearningConfig
 from econ_models.config.economic_params import EconomicParams
 from econ_models.core.nets import NeuralNetFactory
@@ -29,9 +29,8 @@ from econ_models.core.standardize import StateSpaceNormalizer
 from econ_models.core.types import TENSORFLOW_DTYPE
 from econ_models.dl.training.dataset_builder import DatasetBuilder
 from econ_models.io.checkpoints import save_checkpoint_basic
-
+from econ_models.dl.simulation_history import DLSimulationHistory
 tfd = tfp.distributions
-
 
 class BasicModelDL:
     """
@@ -284,3 +283,190 @@ class BasicModelDL:
             f"Bellman: {avg_loss_b:.4e} | Euler: {avg_loss_e:.4e} | "
             f"LR: {current_lr:.2e}"
         )
+    def simulate(
+        self,
+        n_steps: int = 1000,
+        n_batches: int = 1000,
+        seed: int | None = None
+    ) -> Tuple[DLSimulationHistory, Dict[str, float]]:
+        """
+        Simulate economy using learned policy.
+
+        Args:
+            n_steps: Number of simulation periods per batch.
+            n_batches: Number of independent simulation batches.
+            seed: Random seed for reproducibility.
+
+        Returns:
+            Tuple of (DLSimulationHistory with trajectories,
+                    statistics dictionary with boundary hit percentages).
+        """
+        if seed is not None:
+            tf.random.set_seed(seed)
+        
+        # Extract bounds from config
+        k_min = tf.constant(self.config.capital_min, dtype=TENSORFLOW_DTYPE)
+        k_max = tf.constant(self.config.capital_max, dtype=TENSORFLOW_DTYPE)
+        z_min = tf.constant(self.config.productivity_min, dtype=TENSORFLOW_DTYPE)
+        z_max = tf.constant(self.config.productivity_max, dtype=TENSORFLOW_DTYPE)
+        
+        # Compute steady state capital
+        k_ss = self.config.capital_steady_state
+        
+        # Sample initial states uniformly within bounds
+        k_curr = tf.random.uniform(
+            shape=(n_batches, 1), minval=k_min, maxval=k_max, dtype=TENSORFLOW_DTYPE
+        )
+        z_curr = tf.random.uniform(
+            shape=(n_batches, 1), minval=z_min, maxval=z_max, dtype=TENSORFLOW_DTYPE
+        )
+        
+        all_shocks = self.shock_dist.sample(sample_shape=(n_batches, n_steps))
+        
+        # Use TensorArray for dynamic collection
+        k_history = tf.TensorArray(dtype=TENSORFLOW_DTYPE, size=n_steps, dynamic_size=False)
+        z_history = tf.TensorArray(dtype=TENSORFLOW_DTYPE, size=n_steps, dynamic_size=False)
+        investment_rate_history = tf.TensorArray(dtype=TENSORFLOW_DTYPE, size=n_steps, dynamic_size=False)
+        investment_history = tf.TensorArray(dtype=TENSORFLOW_DTYPE, size=n_steps, dynamic_size=False)
+        
+        for t in tf.range(n_steps):
+            # Record current state
+            k_history = k_history.write(t, tf.squeeze(k_curr, axis=1))
+            z_history = z_history.write(t, tf.squeeze(z_curr, axis=1))
+            
+            # Normalize inputs
+            k_norm = self.normalizer.normalize_capital(k_curr)
+            z_norm = self.normalizer.normalize_productivity(z_curr)
+            inputs = tf.concat([k_norm, z_norm], axis=1)
+            
+            # Get policy output (investment rate)
+            investment_rate = self.policy_net(inputs, training=False)
+            investment_rate_history = investment_rate_history.write(
+                t, tf.squeeze(investment_rate, axis=1)
+            )
+            
+            # Calculate investment
+            investment = investment_rate * k_curr
+            investment_history = investment_history.write(t, tf.squeeze(investment, axis=1))
+            
+            # Calculate next period capital
+            k_next = investment + (1.0 - self.params.depreciation_rate) * k_curr
+            
+            # Transition productivity using log AR(1) process
+            eps = tf.reshape(all_shocks[:, t], (-1, 1))
+            z_next = tf.pow(z_curr, self.params.productivity_persistence) * tf.exp(eps)
+            
+            # Update states
+            k_curr = k_next
+            z_curr = z_next
+        
+        # Stack histories: shape (n_steps, n_batches)
+        k_history_tensor = k_history.stack()
+        z_history_tensor = z_history.stack()
+        investment_rate_tensor = investment_rate_history.stack()
+        investment_tensor = investment_history.stack()
+        
+        # Build history object
+        history = DLSimulationHistory(
+            trajectories={
+                "k": k_history_tensor.numpy(),
+                "z": z_history_tensor.numpy(),
+                "investment_rate": investment_rate_tensor.numpy(),
+                "investment": investment_tensor.numpy(),
+                "steady_state_capital": k_ss,
+            },
+            n_batches=n_batches,
+            n_steps=n_steps
+        )
+        
+        # Calculate boundary hit statistics
+        stats = self._compute_simulation_stats(
+            k_history_tensor,
+            z_history_tensor,
+            k_min,
+            k_max,
+            z_min,
+            z_max
+        )
+        
+        return history, stats
+
+
+    def _compute_simulation_stats(
+        self,
+        k_history: tf.Tensor,
+        z_history: tf.Tensor,
+        k_min: tf.Tensor,
+        k_max: tf.Tensor,
+        z_min: tf.Tensor,
+        z_max: tf.Tensor,
+        boundary_tolerance: float = 0.01
+    ) -> Dict[str, float]:
+        """
+        Compute boundary hit statistics from simulation history.
+
+        Args:
+            k_history: Capital history tensor, shape (n_batches, n_steps).
+            z_history: Productivity history tensor, shape (n_batches, n_steps).
+            k_min: Minimum capital bound.
+            k_max: Maximum capital bound.
+            z_min: Minimum productivity bound.
+            z_max: Maximum productivity bound.
+            boundary_tolerance: Fraction of range to consider as "near boundary".
+
+        Returns:
+            Dictionary with boundary hit percentages and summary statistics.
+        """
+        total_obs = tf.cast(tf.size(k_history), TENSORFLOW_DTYPE)
+        
+        # Calculate boundary thresholds
+        k_range = k_max - k_min
+        z_range = z_max - z_min
+        k_tol = boundary_tolerance * k_range
+        z_tol = boundary_tolerance * z_range
+        
+        # Count exact boundary violations (outside bounds)
+        k_below_min = tf.reduce_sum(tf.cast(k_history < k_min, TENSORFLOW_DTYPE))
+        k_above_max = tf.reduce_sum(tf.cast(k_history > k_max, TENSORFLOW_DTYPE))
+        z_below_min = tf.reduce_sum(tf.cast(z_history < z_min, TENSORFLOW_DTYPE))
+        z_above_max = tf.reduce_sum(tf.cast(z_history > z_max, TENSORFLOW_DTYPE))
+        
+        # Count near-boundary observations (within tolerance of bounds)
+        k_near_min = tf.reduce_sum(tf.cast(k_history < k_min + k_tol, TENSORFLOW_DTYPE))
+        k_near_max = tf.reduce_sum(tf.cast(k_history > k_max - k_tol, TENSORFLOW_DTYPE))
+        z_near_min = tf.reduce_sum(tf.cast(z_history < z_min + z_tol, TENSORFLOW_DTYPE))
+        z_near_max = tf.reduce_sum(tf.cast(z_history > z_max - z_tol, TENSORFLOW_DTYPE))
+        
+        stats = {
+            # Exact boundary violations
+            "k_below_min_pct": float(k_below_min / total_obs),
+            "k_above_max_pct": float(k_above_max / total_obs),
+            "z_below_min_pct": float(z_below_min / total_obs),
+            "z_above_max_pct": float(z_above_max / total_obs),
+            
+            # Near-boundary observations
+            "k_near_min_pct": float(k_near_min / total_obs),
+            "k_near_max_pct": float(k_near_max / total_obs),
+            "z_near_min_pct": float(z_near_min / total_obs),
+            "z_near_max_pct": float(z_near_max / total_obs),
+            
+            # Summary statistics
+            "k_mean": float(tf.reduce_mean(k_history)),
+            "k_std": float(tf.math.reduce_std(k_history)),
+            "k_min_observed": float(tf.reduce_min(k_history)),
+            "k_max_observed": float(tf.reduce_max(k_history)),
+            "z_mean": float(tf.reduce_mean(z_history)),
+            "z_std": float(tf.math.reduce_std(z_history)),
+            "z_min_observed": float(tf.reduce_min(z_history)),
+            "z_max_observed": float(tf.reduce_max(z_history)),
+            
+            # Bounds used
+            "k_min_bound": float(k_min),
+            "k_max_bound": float(k_max),
+            "z_min_bound": float(z_min),
+            "z_max_bound": float(z_max),
+            
+            "total_observations": int(total_obs)
+        }
+        
+        return stats

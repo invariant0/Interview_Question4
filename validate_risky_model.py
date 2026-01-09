@@ -36,27 +36,28 @@ def convert_history_to_values(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Convert index-based simulation history to actual grid values.
-    
-    Args:
-        history: SimulationHistory object from Simulator.
-        model: RiskyDebtModelVFI instance with grid definitions.
-        
-    Returns:
-        Tuple of (k_values, b_values, z_values) arrays with shape (n_steps, n_batches).
+    Maps -1 indices (defaults) to np.nan.
     """
     k_grid = model.k_grid.numpy()
     b_grid = model.b_grid.numpy()
     z_grid = model.z_grid.numpy()
     
-    # History trajectories have shape (n_batches, n_steps), transpose for consistency
-    k_indices = history.trajectories["k_idx"].T  # Now (n_steps, n_batches)
+    k_indices = history.trajectories["k_idx"].T  # (n_steps, n_batches)
     b_indices = history.trajectories["b_idx"].T
     z_indices = history.trajectories["z_idx"].T
     
-    k_values = k_grid[k_indices]
-    b_values = b_grid[b_indices]
-    z_values = z_grid[z_indices]
+    # Initialize with NaNs
+    k_values = np.full(k_indices.shape, np.nan)
+    b_values = np.full(b_indices.shape, np.nan)
+    z_values = z_grid[z_indices] # Z usually doesn't default, but if needed handle similarly
     
+    # Create masks for valid (non-default) indices
+    valid_k = k_indices != -1
+    valid_b = b_indices != -1
+    
+    # Map only valid indices
+    k_values[valid_k] = k_grid[k_indices[valid_k]]
+    b_values[valid_b] = b_grid[b_indices[valid_b]]
     return k_values, b_values, z_values
 
 
@@ -266,15 +267,14 @@ def generate_figure_2_batch_distribution(
     k_grid_min, k_grid_max = k_bounds
     b_grid_min, b_grid_max = b_bounds
     
-    # Convert indices to actual values
     k_history, b_history, _ = convert_history_to_values(history, model)
     time_steps = history.n_steps
 
-    # Extract statistics from Simulator
     k_min_rate = sim_stats["k_min"] * 100
     k_max_rate = sim_stats["k_max"] * 100
     b_min_rate = sim_stats["b_min"] * 100
     b_max_rate = sim_stats["b_max"] * 100
+    default_rate = sim_stats.get("default_rate", 0.0) * 100
     
     fig, axes = plt.subplots(2, 2, figsize=(14, 12), constrained_layout=True)
     
@@ -282,26 +282,34 @@ def generate_figure_2_batch_distribution(
     ax_k_heat = axes[0, 0]
     bins_k = 50
     bin_edges_k = np.linspace(k_grid_min, k_grid_max, bins_k + 1)
-    hist_data_k = np.array([np.histogram(k_history[t, :], bins=bin_edges_k, density=True)[0] 
-                            for t in range(time_steps)])
+    
+    # Filter NaNs for histogram
+    hist_data_k = []
+    for t in range(time_steps):
+        step_data = k_history[t, :]
+        valid_data = step_data[~np.isnan(step_data)]
+        if len(valid_data) > 0:
+            hist, _ = np.histogram(valid_data, bins=bin_edges_k, density=True)
+        else:
+            hist = np.zeros(bins_k)
+        hist_data_k.append(hist)
+    hist_data_k = np.array(hist_data_k)
     
     im_k = ax_k_heat.imshow(
         hist_data_k.T, aspect='auto', origin='lower', cmap='viridis',
         extent=[0, time_steps, k_grid_min, k_grid_max]
     )
-    plt.colorbar(im_k, ax=ax_k_heat).set_label('Density')
+    plt.colorbar(im_k, ax=ax_k_heat).set_label('Density (Active Firms)')
     
-    for y_val, label, rate in [(k_grid_min, "Min", k_min_rate), (k_grid_max, "Max", k_max_rate)]:
-        ax_k_heat.axhline(y_val, color='red', linestyle='--', linewidth=2, alpha=0.8)
-        y_offset = 0.05 if y_val == k_grid_min else -0.12
-        ax_k_heat.text(
-            time_steps * 0.02, y_val + (k_grid_max - k_grid_min) * y_offset,
-            f"{label}: {y_val:.2f}\nHit: {rate:.2f}%",
-            color='white', fontweight='bold', fontsize=9,
-            bbox=dict(facecolor='red', alpha=0.5, edgecolor='none')
-        )
+    # Add Default Rate Annotation
+    ax_k_heat.text(
+        time_steps * 0.02, k_grid_max * 0.9,
+        f"Default Rate: {default_rate:.2f}%",
+        color='white', fontweight='bold', fontsize=10,
+        bbox=dict(facecolor='black', alpha=0.6, edgecolor='none')
+    )
     
-    ax_k_heat.set_title("Capital Distribution Evolution", fontsize=12)
+    ax_k_heat.set_title("Capital Distribution (Active Firms)", fontsize=12)
     ax_k_heat.set_ylabel("Capital ($K$)")
     ax_k_heat.set_xlabel("Time ($t$)")
     
@@ -309,61 +317,53 @@ def generate_figure_2_batch_distribution(
     ax_b_heat = axes[0, 1]
     bins_b = 50
     bin_edges_b = np.linspace(b_grid_min, b_grid_max, bins_b + 1)
-    hist_data_b = np.array([np.histogram(b_history[t, :], bins=bin_edges_b, density=True)[0] 
-                            for t in range(time_steps)])
+    
+    hist_data_b = []
+    for t in range(time_steps):
+        step_data = b_history[t, :]
+        valid_data = step_data[~np.isnan(step_data)]
+        if len(valid_data) > 0:
+            hist, _ = np.histogram(valid_data, bins=bin_edges_b, density=True)
+        else:
+            hist = np.zeros(bins_b)
+        hist_data_b.append(hist)
+    hist_data_b = np.array(hist_data_b)
     
     im_b = ax_b_heat.imshow(
         hist_data_b.T, aspect='auto', origin='lower', cmap='plasma',
         extent=[0, time_steps, b_grid_min, b_grid_max]
     )
-    plt.colorbar(im_b, ax=ax_b_heat).set_label('Density')
-    
-    for y_val, label, rate in [(b_grid_min, "Min", b_min_rate), (b_grid_max, "Max", b_max_rate)]:
-        ax_b_heat.axhline(y_val, color='cyan', linestyle='--', linewidth=2, alpha=0.8)
-        y_offset = 0.05 if y_val == b_grid_min else -0.12
-        ax_b_heat.text(
-            time_steps * 0.02, y_val + (b_grid_max - b_grid_min) * y_offset,
-            f"{label}: {y_val:.2f}\nHit: {rate:.2f}%",
-            color='white', fontweight='bold', fontsize=9,
-            bbox=dict(facecolor='cyan', alpha=0.5, edgecolor='none')
-        )
-    
-    ax_b_heat.set_title("Debt Distribution Evolution", fontsize=12)
+    plt.colorbar(im_b, ax=ax_b_heat).set_label('Density (Active Firms)')
+    ax_b_heat.set_title("Debt Distribution (Active Firms)", fontsize=12)
     ax_b_heat.set_ylabel("Debt ($B$)")
     ax_b_heat.set_xlabel("Time ($t$)")
     
     # --- Capital KDE ---
     ax_k_dist = axes[1, 0]
-    sns.kdeplot(k_history[0, :], ax=ax_k_dist, fill=True, color="gray", alpha=0.3, label="Initial")
-    sns.kdeplot(k_history[time_steps // 2, :], ax=ax_k_dist, color="blue", linestyle="--", 
-                label=f"t={time_steps // 2}")
-    sns.kdeplot(k_history[-1, :], ax=ax_k_dist, fill=True, color="crimson", alpha=0.4, 
-                label=f"Stationary (t={time_steps})")
+    # Helper to safely plot KDE ignoring NaNs
+    def safe_kde(ax, data, color, label, linestyle="-", fill=False):
+        valid = data[~np.isnan(data)]
+        if len(valid) > 10: # Need enough points for KDE
+            sns.kdeplot(valid, ax=ax, fill=fill, color=color, alpha=0.3 if fill else 1.0, 
+                        linestyle=linestyle, label=label)
+            
+    safe_kde(ax_k_dist, k_history[0, :], "gray", "Initial", fill=True)
+    safe_kde(ax_k_dist, k_history[time_steps // 2, :], "blue", f"t={time_steps // 2}", linestyle="--")
+    safe_kde(ax_k_dist, k_history[-1, :], "crimson", f"Stationary (t={time_steps})", fill=True)
     
-    ax_k_dist.axvline(k_grid_min, color='red', linestyle='--', linewidth=2, alpha=0.8)
-    ax_k_dist.axvline(k_grid_max, color='red', linestyle='--', linewidth=2, alpha=0.8)
-    ax_k_dist.set_title("Capital: Convergence to Stationary", fontsize=12)
-    ax_k_dist.set_xlabel("Capital ($K$)")
-    ax_k_dist.set_ylabel("Density")
+    ax_k_dist.set_title("Capital Density (Active)", fontsize=12)
     ax_k_dist.legend(loc='upper right')
     
     # --- Debt KDE ---
     ax_b_dist = axes[1, 1]
-    sns.kdeplot(b_history[0, :], ax=ax_b_dist, fill=True, color="gray", alpha=0.3, label="Initial")
-    sns.kdeplot(b_history[time_steps // 2, :], ax=ax_b_dist, color="purple", linestyle="--", 
-                label=f"t={time_steps // 2}")
-    sns.kdeplot(b_history[-1, :], ax=ax_b_dist, fill=True, color="darkorange", alpha=0.4, 
-                label=f"Stationary (t={time_steps})")
+    safe_kde(ax_b_dist, b_history[0, :], "gray", "Initial", fill=True)
+    safe_kde(ax_b_dist, b_history[time_steps // 2, :], "purple", f"t={time_steps // 2}", linestyle="--")
+    safe_kde(ax_b_dist, b_history[-1, :], "darkorange", f"Stationary (t={time_steps})", fill=True)
     
-    ax_b_dist.axvline(b_grid_min, color='cyan', linestyle='--', linewidth=2, alpha=0.8)
-    ax_b_dist.axvline(b_grid_max, color='cyan', linestyle='--', linewidth=2, alpha=0.8)
-    ax_b_dist.set_title("Debt: Convergence to Stationary", fontsize=12)
-    ax_b_dist.set_xlabel("Debt ($B$)")
-    ax_b_dist.set_ylabel("Density")
+    ax_b_dist.set_title("Debt Density (Active)", fontsize=12)
     ax_b_dist.legend(loc='upper right')
     
-    fig.suptitle(f"Batch Simulation & Grid Sufficiency (N={history.n_batches} agents)", 
-                 fontsize=14)
+    fig.suptitle(f"Batch Simulation (N={history.n_batches}) - Excluding Defaults", fontsize=14)
     plt.savefig(os.path.join(SAVE_DIR, "figure_2_risky_batch_distribution.png"))
     print(f"-> Figure 2 saved to {os.path.join(SAVE_DIR, 'figure_2_risky_batch_distribution.png')}")
     plt.close()
@@ -431,96 +431,195 @@ def generate_figure_3_value_surface(model: RiskyDebtModelVFI, v_star: np.ndarray
     plt.close()
 
 
-def generate_figure_4_bond_price(
+def generate_figure_4_investment_debt_policies(
+    history: SimulationHistory,
     model: RiskyDebtModelVFI,
-    q_star: np.ndarray
 ):
-    """
-    Generates Figure 4: Bond Price Q(K, B', Z) with respect to Debt Level.
-    
-    Shows how the bond price varies with next-period debt (B') for different
-    capital levels and productivity shocks.
-    
-    Top row: Q vs B' for different capital levels (Low, Medium, High K) at medium Z.
-    Bottom row: Q vs B' for different productivity levels (Low, Medium, High Z) at medium K.
-    
-    Args:
-        model: RiskyDebtModelVFI instance.
-        q_star: Bond price schedule with shape (n_k, n_b, n_z).
-    """
+    # ... (Grid retrieval same as before) ...
     k_grid = model.k_grid.numpy()
     b_grid = model.b_grid.numpy()
     z_grid = model.z_grid.numpy()
     
-    n_k = len(k_grid)
-    n_b = len(b_grid)
-    n_z = len(z_grid)
+    n_k, n_b, n_z = len(k_grid), len(b_grid), len(z_grid)
     
-    # Select low, medium, high indices
-    k_indices = [0, n_k // 4, n_k // 2, 3 * n_k // 4, n_k - 1]
-    z_indices = [0, n_z // 4, n_z // 2, 3 * n_z // 4, n_z - 1]
+    # Get indices directly to filter -1
+    k_idx_traj = history.trajectories["k_idx"]
+    b_idx_traj = history.trajectories["b_idx"]
+    z_idx_traj = history.trajectories["z_idx"]
     
-    k_mid_idx = n_k // 2
-    z_mid_idx = n_z // 2
+    # Convert to values (with NaNs for defaults)
+    k_values, b_values, z_values = convert_history_to_values(history, model)
     
-    # Color palettes
-    k_colors = plt.cm.Blues(np.linspace(0.3, 0.9, len(k_indices)))
-    z_colors = plt.cm.Reds(np.linspace(0.3, 0.9, len(z_indices)))
+    # Calculate Investment and Next Debt
+    delta = model.params.depreciation_rate
     
+    # We look at transitions from t to t+1
+    # If an agent defaults at t (k_idx = -1) or t+1, we skip
+    k_current = k_values.T[:, :-1]
+    k_next = k_values.T[:, 1:]
+    b_next = b_values.T[:, 1:]
+    
+    # Investment is only valid if both current and next K are valid numbers
+    investment = k_next - (1 - delta) * k_current
+    
+    # Flatten everything
+    k_idx_flat = k_idx_traj[:, :-1].flatten()
+    b_idx_flat = b_idx_traj[:, :-1].flatten()
+    z_idx_flat = z_idx_traj[:, :-1].flatten()
+    
+    investment_flat = investment.flatten()
+    b_next_flat = b_next.flatten()
+    
+    # --- Compute Averages ---
+    
+    # Initialize accumulators
+    inv_by_k = np.zeros(n_k)
+    debt_by_k = np.zeros(n_k)
+    count_by_k = np.zeros(n_k)
+    
+    # Loop through flattened data
+    for i in range(len(k_idx_flat)):
+        k_i = k_idx_flat[i]
+        
+        # SKIP if current state is default (-1) or if data is NaN
+        if k_i == -1 or np.isnan(investment_flat[i]) or np.isnan(b_next_flat[i]):
+            continue
+            
+        inv_by_k[k_i] += investment_flat[i]
+        debt_by_k[k_i] += b_next_flat[i]
+        count_by_k[k_i] += 1
+        
+    # Normalize
+    mask_k = count_by_k > 0
+    inv_by_k[mask_k] /= count_by_k[mask_k]
+    debt_by_k[mask_k] /= count_by_k[mask_k]
+    inv_by_k[~mask_k] = np.nan
+    debt_by_k[~mask_k] = np.nan
+
+    # Repeat logic for B
+    inv_by_b = np.zeros(n_b)
+    debt_by_b = np.zeros(n_b)
+    count_by_b = np.zeros(n_b)
+    
+    for i in range(len(b_idx_flat)):
+        b_i = b_idx_flat[i]
+        if b_i == -1 or np.isnan(investment_flat[i]) or np.isnan(b_next_flat[i]):
+            continue
+        inv_by_b[b_i] += investment_flat[i]
+        debt_by_b[b_i] += b_next_flat[i]
+        count_by_b[b_i] += 1
+        
+    mask_b = count_by_b > 0
+    inv_by_b[mask_b] /= count_by_b[mask_b]
+    debt_by_b[mask_b] /= count_by_b[mask_b]
+    inv_by_b[~mask_b] = np.nan
+    debt_by_b[~mask_b] = np.nan
+
+    # Repeat logic for Z
+    inv_by_z = np.zeros(n_z)
+    debt_by_z = np.zeros(n_z)
+    count_by_z = np.zeros(n_z)
+    
+    for i in range(len(z_idx_flat)):
+        z_i = z_idx_flat[i]
+        # Z usually doesn't have -1, but check investment validity
+        if np.isnan(investment_flat[i]) or np.isnan(b_next_flat[i]):
+            continue
+        inv_by_z[z_i] += investment_flat[i]
+        debt_by_z[z_i] += b_next_flat[i]
+        count_by_z[z_i] += 1
+
+    mask_z = count_by_z > 0
+    inv_by_z[mask_z] /= count_by_z[mask_z]
+    debt_by_z[mask_z] /= count_by_z[mask_z]
+    inv_by_z[~mask_z] = np.nan
+    debt_by_z[~mask_z] = np.nan
+
+    # --- Create Figure ---
     fig, axes = plt.subplots(2, 3, figsize=(18, 12))
     
-    # --- Top Row: Q vs B' for different capital levels at different Z levels ---
-    z_plot_indices = [0, n_z // 2, n_z - 1]
-    z_plot_labels = ["Low Productivity", "Medium Productivity", "High Productivity"]
+    # Color scheme
+    inv_color = '#2980b9'  # Blue for investment
+    debt_color = '#c0392b'  # Red for debt
     
-    for col, (z_idx, z_label) in enumerate(zip(z_plot_indices, z_plot_labels)):
-        ax = axes[0, col]
-        
-        for i, k_idx in enumerate(k_indices):
-            q_slice = q_star[k_idx, :, z_idx]
-            label = f"K = {k_grid[k_idx]:.2f}"
-            ax.plot(b_grid, q_slice, linewidth=2, color=k_colors[i], label=label)
-        
-        ax.set_xlabel("Next-Period Debt ($B'$)", fontsize=11)
-        ax.set_ylabel("Bond Price ($Q$)", fontsize=11)
-        ax.set_title(f"Bond Price vs Debt | {z_label}\n(Z = {z_grid[z_idx]:.3f})", fontsize=12, pad=10)
-        ax.legend(loc='upper right', fontsize=9)
-        ax.set_ylim(0, 1.05)
-        ax.axhline(y=model.params.discount_factor, color='gray', linestyle='--', linewidth=1, alpha=0.7)
-        ax.text(b_grid[0], model.params.discount_factor + 0.02, f'β = {model.params.discount_factor:.3f}', 
-                fontsize=9, color='gray')
-        sns.despine(ax=ax)
+    # --- Top Row: Investment ---
     
-    # --- Bottom Row: Q vs B' for different productivity levels at different K levels ---
-    k_plot_indices = [0, n_k // 2, n_k - 1]
-    k_plot_labels = ["Low Capital", "Medium Capital", "High Capital"]
+    # Investment vs K
+    ax = axes[0, 0]
+    valid_k = mask_k
+    ax.plot(k_grid[valid_k], inv_by_k[valid_k], linewidth=2.5, color=inv_color, marker='o', markersize=4)
+    ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.7)
+    ax.fill_between(k_grid[valid_k], 0, inv_by_k[valid_k], alpha=0.2, color=inv_color)
+    ax.set_xlabel("Capital ($K$)", fontsize=12)
+    ax.set_ylabel("Average Investment ($I$)", fontsize=12)
+    ax.set_title("Investment vs Capital", fontsize=13, pad=10)
+    sns.despine(ax=ax)
     
-    for col, (k_idx, k_label) in enumerate(zip(k_plot_indices, k_plot_labels)):
-        ax = axes[1, col]
-        
-        for i, z_idx in enumerate(z_indices):
-            q_slice = q_star[k_idx, :, z_idx]
-            label = f"Z = {z_grid[z_idx]:.3f}"
-            ax.plot(b_grid, q_slice, linewidth=2, color=z_colors[i], label=label)
-        
-        ax.set_xlabel("Next-Period Debt ($B'$)", fontsize=11)
-        ax.set_ylabel("Bond Price ($Q$)", fontsize=11)
-        ax.set_title(f"Bond Price vs Debt | {k_label}\n(K = {k_grid[k_idx]:.2f})", fontsize=12, pad=10)
-        ax.legend(loc='upper right', fontsize=9)
-        ax.set_ylim(0, 1.05)
-        ax.axhline(y=model.params.discount_factor, color='gray', linestyle='--', linewidth=1, alpha=0.7)
-        ax.text(b_grid[0], model.params.discount_factor + 0.02, f'β = {model.params.discount_factor:.3f}', 
-                fontsize=9, color='gray')
-        sns.despine(ax=ax)
+    # Investment vs B
+    ax = axes[0, 1]
+    valid_b = mask_b & (b_grid >= 20) & (b_grid <= 30)
+    ax.plot(b_grid[valid_b], inv_by_b[valid_b], linewidth=2.5, color=inv_color, marker='o', markersize=4)
+    ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.7)
+    ax.fill_between(b_grid[valid_b], 0, inv_by_b[valid_b], alpha=0.2, color=inv_color)
+    ax.set_xlabel("Debt ($B$)", fontsize=12)
+    ax.set_ylabel("Average Investment ($I$)", fontsize=12)
+    ax.set_title("Investment vs Debt", fontsize=13, pad=10)
+    sns.despine(ax=ax)
     
-    fig.suptitle("Bond Price Schedule Q(K, B', Z)\n"
-                 "Top: Varying Capital Levels | Bottom: Varying Productivity Levels", 
+    # Investment vs Z
+    ax = axes[0, 2]
+    valid_z = mask_z
+    ax.plot(z_grid[valid_z], inv_by_z[valid_z], linewidth=2.5, color=inv_color, marker='o', markersize=4)
+    ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.7)
+    ax.fill_between(z_grid[valid_z], 0, inv_by_z[valid_z], alpha=0.2, color=inv_color)
+    ax.set_xlabel("Productivity ($Z$)", fontsize=12)
+    ax.set_ylabel("Average Investment ($I$)", fontsize=12)
+    ax.set_title("Investment vs Productivity", fontsize=13, pad=10)
+    sns.despine(ax=ax)
+    
+    # --- Bottom Row: Next-Period Debt ---
+    
+    # Next Debt vs K
+    ax = axes[1, 0]
+    ax.plot(k_grid[valid_k], debt_by_k[valid_k], linewidth=2.5, color=debt_color, marker='s', markersize=4)
+    ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.7)
+    ax.fill_between(k_grid[valid_k], 0, debt_by_k[valid_k], alpha=0.2, color=debt_color)
+    ax.set_xlabel("Capital ($K$)", fontsize=12)
+    ax.set_ylabel("Average Next-Period Debt ($B'$)", fontsize=12)
+    ax.set_title("Next-Period Debt vs Capital", fontsize=13, pad=10)
+    sns.despine(ax=ax)
+    
+    # Next Debt vs B
+    ax = axes[1, 1]
+    valid_b_debt = mask_b & (b_grid >= 20) & (b_grid <= 30)
+    ax.plot(b_grid[valid_b_debt], debt_by_b[valid_b_debt], linewidth=2.5, color=debt_color, marker='s', markersize=4)
+    # Add 45-degree line for reference
+    b_range = b_grid[valid_b_debt]
+    ax.plot(b_range, b_range, linestyle='--', color='gray', linewidth=1.5, alpha=0.7, label='45° line')
+    ax.fill_between(b_grid[valid_b_debt], 0, debt_by_b[valid_b_debt], alpha=0.2, color=debt_color)
+    ax.set_xlabel("Debt ($B$)", fontsize=12)
+    ax.set_ylabel("Average Next-Period Debt ($B'$)", fontsize=12)
+    ax.set_title("Next-Period Debt vs Current Debt", fontsize=13, pad=10)
+    ax.legend(loc='upper left', fontsize=10)
+    sns.despine(ax=ax)
+    
+    # Next Debt vs Z
+    ax = axes[1, 2]
+    ax.plot(z_grid[valid_z], debt_by_z[valid_z], linewidth=2.5, color=debt_color, marker='s', markersize=4)
+    ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.7)
+    ax.fill_between(z_grid[valid_z], 0, debt_by_z[valid_z], alpha=0.2, color=debt_color)
+    ax.set_xlabel("Productivity ($Z$)", fontsize=12)
+    ax.set_ylabel("Average Next-Period Debt ($B'$)", fontsize=12)
+    ax.set_title("Next-Period Debt vs Productivity", fontsize=13, pad=10)
+    sns.despine(ax=ax)
+    
+    fig.suptitle("Policy Functions: Investment and Next-Period Debt\n"
+                 "(Averaged from Simulation Data)", 
                  fontsize=14, y=1.02)
     plt.tight_layout()
-    plt.savefig(os.path.join(SAVE_DIR, "figure_4_risky_bond_price.png"), bbox_inches='tight')
-    print(f"-> Figure 4 saved to {os.path.join(SAVE_DIR, 'figure_4_risky_bond_price.png')}")
+    plt.savefig(os.path.join(SAVE_DIR, "figure_4_investment_debt_policies.png"), bbox_inches='tight')
+    print(f"-> Figure 4 saved to {os.path.join(SAVE_DIR, 'figure_4_investment_debt_policies.png')}")
     plt.close()
-
 
 # --- Main Execution Logic ---
 
@@ -543,6 +642,7 @@ def main():
     print("\n[Phase 2] Running Grid Convergence Test (Figure 1)...")
     
     test_grid_sizes = [(50, 50), (60, 60), (70, 70), (80, 80), (90, 90)]
+    # test_grid_sizes = [(50, 50), (90, 90)]
     sup_norm_errors: List[Optional[float]] = []
     mae_errors: List[Optional[float]] = []
     max_abs_non_default_errors: List[Optional[float]] = []
@@ -623,14 +723,15 @@ def main():
     print(f"\n[Phase 3] Running Batch Simulation using {TARGET_GRID_SIZE[0]}x{TARGET_GRID_SIZE[1]} grid (Figure 2)...")
     
     v_star = optimal_res['V']
-    q_star = optimal_res.get('Q', None)
+    q_star = optimal_res['Q']
     BATCH_SIZE = 10000
-    T_SIM = 500
+    T_SIM = 50
     SEED = 42
     
     print(f"  ... Simulating batch of {BATCH_SIZE} agents for {T_SIM} periods.")
     history, sim_stats = optimal_model.simulate(
         value_function=v_star,
+        q_sched=q_star,
         n_steps=T_SIM,
         n_batches=BATCH_SIZE,
         seed=SEED
@@ -654,14 +755,12 @@ def main():
     print("\n[Phase 4] Generating Value Function Surface Analysis (Figure 3)...")
     generate_figure_3_value_surface(optimal_model, v_star)
     
-    # Bond Price Analysis
-    print("\n[Phase 5] Generating Bond Price Analysis (Figure 4)...")
-    if q_star is not None:
-        generate_figure_4_bond_price(optimal_model, q_star)
-    else:
-        print("  Warning: Bond price schedule (Q) not found in model results. Skipping Figure 4.")
+    print("\n[Phase 5] Generating Investment and Debt Policy Analysis (Figure 4)...")
+    generate_figure_4_investment_debt_policies(history, optimal_model)
     
-    print("\nRisky Debt Model Analysis Complete.")
+    # print("\n[Phase 6] Generating Investment Rate and Debt Ratio Policy Analysis (Figure 5)...")
+    # generate_figure_5_investment_rate_debt_ratio_policies(history, optimal_model)
+    # print("\nRisky Debt Model Analysis Complete.")
 
 
 if __name__ == "__main__":

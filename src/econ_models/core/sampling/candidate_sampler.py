@@ -14,7 +14,7 @@ import tensorflow_probability as tfp
 from econ_models.config.dl_config import DeepLearningConfig
 from econ_models.core.types import TENSORFLOW_DTYPE, Tensor
 from econ_models.core.sampling.curriculum import CurriculumBounds
-
+from econ_models.core.sampling.state_sampler import StateSampler
 tfd = tfp.distributions
 
 
@@ -76,6 +76,72 @@ class CandidateSampler:
             std_ratio_max, std_ratio_min,
             uniform_prob_initial, uniform_prob_final
         )
+
+        return k_cand, b_cand
+    def sample_candidate_grid(
+            batch_size: int,
+            n_candidates: int,
+            k_current: Tensor,
+            b_current: Tensor,
+            config: DeepLearningConfig,
+            progress: Optional[tf.Tensor] = None,
+            std_ratio_max: float = 0.4,
+            std_ratio_min: float = 0.1,
+            uniform_prob_initial: float = 1.0,
+            uniform_prob_final: float = 0.0
+        ) -> Tuple[tf.Tensor, tf.Tensor]:
+        """
+        Generate candidates for next-period capital and debt using a mesh grid approach.
+        
+        This implementation generates independent samples for k and b, sorts them to 
+        create a structured axis, and then creates a dense meshgrid of candidates.
+        
+        Note: n_candidates in this context is interpreted as the TOTAL number of 
+        grid points. Therefore, the grid side length is sqrt(n_candidates).
+        """
+        progress = CandidateSampler._normalize_progress(progress)
+        
+        # Ensure n_candidates is a perfect square for a 2D mesh, or adjust logic
+        # Here we calculate the side length of the grid
+        grid_side = tf.cast(tf.math.sqrt(tf.cast(n_candidates, tf.float32)), tf.int32)
+        
+        # Recalculate total candidates to match the perfect square grid
+        n_total = grid_side * grid_side
+
+        # Get curriculum bounds
+        k_min, k_max = CandidateSampler._get_capital_bounds(config, progress)
+        b_min, b_max = CandidateSampler._get_debt_bounds(config, progress)
+
+        # 1. Sample axes independently
+        # We sample 'grid_side' number of points for each dimension per batch
+        k_samples = StateSampler._sample_beta_scaled(
+            shape=(batch_size, grid_side), minval=k_min, maxval=k_max
+        )
+        b_samples = StateSampler._sample_beta_scaled(
+            shape=(batch_size, grid_side), minval=b_min, maxval=b_max
+        )
+
+        # 2. Sort the samples to ensure monotonic axes
+        # This is crucial for "grid" behavior rather than just random scatter
+        k_sorted = tf.sort(k_samples, axis=1)
+        b_sorted = tf.sort(b_samples, axis=1)
+
+        # 3. Generate Mesh Grid
+        # We need to broadcast these arrays to create a grid of shape (batch_size, grid_side, grid_side)
+        
+        # Expand dims for broadcasting:
+        # k_sorted: (batch, grid_side, 1) -> repeats along the 'b' axis
+        k_mesh = tf.expand_dims(k_sorted, axis=2) 
+        k_mesh = tf.tile(k_mesh, [1, 1, grid_side])
+        
+        # b_sorted: (batch, 1, grid_side) -> repeats along the 'k' axis
+        b_mesh = tf.expand_dims(b_sorted, axis=1)
+        b_mesh = tf.tile(b_mesh, [1, grid_side, 1])
+
+        # 4. Flatten back to (batch_size, n_candidates)
+        # The result is a list of coordinate pairs covering the 2D space
+        k_cand = tf.reshape(k_mesh, (batch_size, n_total))
+        b_cand = tf.reshape(b_mesh, (batch_size, n_total))
 
         return k_cand, b_cand
 

@@ -11,6 +11,7 @@ Example:
 """
 
 from pathlib import Path
+from typing import Optional
 import tensorflow as tf
 
 
@@ -53,3 +54,38 @@ def save_checkpoint_risky(
     path = Path(save_dir)
     path.mkdir(parents=True, exist_ok=True)
     value_net.save_weights(path / f"risky_value_net_{epoch}{suffix}.weights.h5")
+
+def save_checkpoint_risky_upgrade(
+    value_net: tf.keras.Model,
+    capital_policy_net: tf.keras.Model,
+    debt_policy_net: tf.keras.Model,
+    epoch: int,
+    save_dir: str = "checkpoints/risky_upgrade",
+    suffix: str = "",
+    continuous_net: Optional[tf.keras.Model] = None,
+) -> None:
+    """
+    Save checkpoint for risky upgrade model networks.
+
+    Args:
+        value_net: Value function neural network V(s).
+        capital_policy_net: Capital policy network πk(s).
+        debt_policy_net: Debt policy network πb(s).
+        epoch: Current training epoch for naming.
+        save_dir: Directory for checkpoint storage.
+        suffix: Optional suffix for filename.
+        continuous_net: Optional continuous value network Vcont(s).
+    """
+    path = Path(save_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    
+    # Save value network
+    value_net.save_weights(path / f"risky_value_net_{epoch}{suffix}.weights.h5")
+    
+    # Save policy networks
+    capital_policy_net.save_weights(path / f"risky_capital_policy_net_{epoch}{suffix}.weights.h5")
+    debt_policy_net.save_weights(path / f"risky_debt_policy_net_{epoch}{suffix}.weights.h5")
+    
+    # Optionally save continuous network
+    if continuous_net is not None:
+        continuous_net.save_weights(path / f"risky_continuous_net_{epoch}{suffix}.weights.h5")

@@ -110,8 +110,8 @@ def generate_figure_1_convergence(
     ax.legend(loc='upper right')
     sns.despine()
     plt.tight_layout()
-    plt.savefig(os.path.join(SAVE_DIR, "figure_1_convergence.png"))
-    print(f"-> Figure 1 saved to {os.path.join(SAVE_DIR, 'figure_1_convergence.png')}")
+    plt.savefig(os.path.join(SAVE_DIR, "check_grid_size_sufficiency.png"))
+    print(f"-> Figure 1 saved to {os.path.join(SAVE_DIR, 'check_grid_size_sufficiency.png')}")
     plt.close()
 
 
@@ -121,7 +121,7 @@ def generate_figure_2_batch_distribution(
     sim_stats: Dict[str, float],
     grid_bounds: Tuple[float, float]
 ):
-    """Generates Figure 2: Evolution of the Capital Distribution over time."""
+    """Generates Figure 2: stationary distribution from batch simulation."""
     k_grid_min, k_grid_max = grid_bounds
     
     # Convert indices to actual capital values
@@ -157,7 +157,7 @@ def generate_figure_2_batch_distribution(
             bbox=dict(facecolor='red', alpha=0.5, edgecolor='none')
         )
     
-    ax_heat.set_title("Evolution of Capital Distribution (Batch Simulation)", fontsize=14)
+    ax_heat.set_title("Stationary Distribution heatmap", fontsize=14)
     ax_heat.set_ylabel("Capital ($K$)")
     ax_heat.set_xlabel("Time ($t$)")
     
@@ -165,17 +165,46 @@ def generate_figure_2_batch_distribution(
     sns.kdeplot(k_history[0, :], ax=ax_dist, fill=True, color="gray", alpha=0.3, label="Initial Distribution")
     sns.kdeplot(k_history[time_steps // 2, :], ax=ax_dist, color="blue", linestyle="--", label=f"t={time_steps // 2}")
     sns.kdeplot(k_history[-1, :], ax=ax_dist, fill=True, color="crimson", alpha=0.4, label=f"Stationary (t={time_steps})")
+    # 2. Add Mean Annotations (Modification Start)
+    # Create a transform that blends data coordinates (for x) and axes coordinates (for y)
+    import matplotlib.transforms as transforms
+    trans = transforms.blended_transform_factory(ax_dist.transData, ax_dist.transAxes)
     
+    # Define config: (Time Index, Color, Y-position relative to axis height)
+    mean_configs = [
+        (0, "gray", 0.95),     # Initial
+        (-1, "crimson", 0.88)  # Stationary
+    ]
+    
+    for t_idx, color, y_pos in mean_configs:
+        # Calculate mean
+        mu = np.mean(k_history[t_idx, :])
+        
+        # Vertical dotted line at mean
+        ax_dist.axvline(mu, color=color, linestyle=":", linewidth=2, alpha=0.8)
+        
+        # Text label
+        ax_dist.text(
+            mu, y_pos, 
+            f"Mean: {mu:.2f}", 
+            transform=trans, 
+            color=color, 
+            fontweight="bold", 
+            ha="center", 
+            fontsize=10,
+            bbox=dict(facecolor="white", alpha=0.7, edgecolor="none", pad=1.5)
+        )
+    # (Modification End)
     ax_dist.axvline(k_grid_min, color='red', linestyle='--', linewidth=2, alpha=0.8)
     ax_dist.axvline(k_grid_max, color='red', linestyle='--', linewidth=2, alpha=0.8)
-    ax_dist.set_title("Convergence to Stationary Distribution", fontsize=14)
+    ax_dist.set_title("Stationary Distribution density", fontsize=14)
     ax_dist.set_xlabel("Capital ($K$)")
     ax_dist.set_ylabel("Density")
     ax_dist.legend(loc='upper right')
             
-    fig.suptitle(f"Batch Simulation & Grid Sufficiency (N={history.n_batches})", fontsize=16)
-    plt.savefig(os.path.join(SAVE_DIR, "figure_2_batch_distribution.png"))
-    print(f"-> Figure 2 saved to {os.path.join(SAVE_DIR, 'figure_2_batch_distribution.png')}")
+    fig.suptitle(f"Batch Simulation & Stationary Distribution (N={history.n_batches})", fontsize=16)
+    plt.savefig(os.path.join(SAVE_DIR, "stationary_distribution.png"))
+    print(f"-> Figure 2 saved to {os.path.join(SAVE_DIR, 'stationary_distribution.png')}")
     plt.close()
 
 
@@ -208,8 +237,8 @@ def generate_figure_3_value_surface(model: BasicModelVFI, v_star: np.ndarray):
         ax.set_ylabel("Value ($V$)")
     
     plt.tight_layout()
-    plt.savefig(os.path.join(SAVE_DIR, "figure_3_value_surface.png"))
-    print(f"-> Figure 3 saved to {os.path.join(SAVE_DIR, 'figure_3_value_surface.png')}")
+    plt.savefig(os.path.join(SAVE_DIR, "value_surface.png"))
+    print(f"-> Figure 3 saved to {os.path.join(SAVE_DIR, 'value_surface.png')}")
     plt.close()
 
 
@@ -269,8 +298,8 @@ def generate_figure_4_investment_rates(
         ax.set_ylabel(ylabel)
     
     plt.tight_layout()
-    plt.savefig(os.path.join(SAVE_DIR, "figure_4_investment_rates.png"))
-    print(f"-> Figure 4 saved to {os.path.join(SAVE_DIR, 'figure_4_investment_rates.png')}")
+    plt.savefig(os.path.join(SAVE_DIR, "investment_rates.png"))
+    print(f"-> Figure 4 saved to {os.path.join(SAVE_DIR, 'investment_rates.png')}")
     plt.close()
 
 
@@ -332,7 +361,7 @@ def main():
     print(f"\n[Phase 3] Running Batch Simulation using N={TARGET_GRID_SIZE} (Figure 2)...")
     
     v_star = optimal_res['V']
-    BATCH_SIZE, T_SIM = 10000, 150
+    BATCH_SIZE, T_SIM = 10000, 500
     SEED = 42  # For reproducibility
     
     # Use the model's built-in simulate method which leverages Simulator

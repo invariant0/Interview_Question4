@@ -86,7 +86,11 @@ class CashFlowCalculator:
 
         # Calculate equity issuance cost
         issuance_cost = CashFlowCalculator._calculate_issuance_cost(e_raw, params)
-
+        # print("debt_inflow statistics:", tf.reduce_min(debt_inflow).numpy(), tf.reduce_max(debt_inflow).numpy(), tf.reduce_mean(debt_inflow).numpy())
+        # print("interest_implied statistics:", tf.reduce_min(interest_implied).numpy(), tf.reduce_max(interest_implied).numpy(), tf.reduce_mean(interest_implied).numpy())
+        # print("tax_shield statistics:", tf.reduce_min(tax_shield).numpy(), tf.reduce_max(tax_shield).numpy(), tf.reduce_mean(tax_shield).numpy())
+        # print("e_raw statistics:", tf.reduce_min(e_raw).numpy(), tf.reduce_max(e_raw).numpy(), tf.reduce_mean(e_raw).numpy())
+        # print("debt_curr statistics:", tf.reduce_min(debt_curr).numpy(), tf.reduce_max(debt_curr).numpy(), tf.reduce_mean(debt_curr).numpy())
         return e_raw - issuance_cost
 
     @staticmethod

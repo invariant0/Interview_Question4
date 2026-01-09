@@ -20,6 +20,7 @@ from econ_models.config.economic_params import EconomicParams, load_economic_par
 from econ_models.config.dl_config import DeepLearningConfig, load_dl_config
 from econ_models.dl.basic import BasicModelDL
 from econ_models.dl.risky import RiskyModelDL
+from econ_models.dl.risky_upgrade import RiskyModelDL_UPGRADE
 from econ_models.io.file_utils import load_json_file
 import numpy as np
 import tensorflow as tf
@@ -169,7 +170,7 @@ def configure_model(args: argparse.Namespace) -> Any:
     dl_config.productivity_min = bounds['z_min']
     dl_config.productivity_max = bounds['z_max']
 
-    if args.model == 'risky':
+    if args.model == 'risky' or args.model == 'risky_upgrade':
         dl_config.debt_min = bounds['b_min']
         dl_config.debt_max = bounds['b_max']
         logger.info(
@@ -191,8 +192,10 @@ def configure_model(args: argparse.Namespace) -> Any:
     # Instantiate model
     if args.model == 'basic':
         return BasicModelDL(econ_params, dl_config)
-    else:
+    elif args.model == 'risky':
         return RiskyModelDL(econ_params, dl_config)
+    elif args.model == 'risky_upgrade':
+        return RiskyModelDL_UPGRADE(econ_params, dl_config)
 
 
 def main():
@@ -204,7 +207,7 @@ def main():
         '--model',
         type=str,
         default='basic',
-        choices=['basic', 'risky'],
+        choices=['basic', 'risky', 'risky_upgrade'],
         help="Model architecture to train."
     )
     args = parser.parse_args()

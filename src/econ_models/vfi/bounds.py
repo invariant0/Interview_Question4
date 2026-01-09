@@ -148,7 +148,7 @@ class BoundaryFinder:
         k_ss = SteadyStateCalculator.calculate_capital(self.params)
         k_min_scale = 0.5
         k_max_scale = 2.0
-        b_min_scale = 0.2
+        b_min_scale = 1.2
         b_max_scale = 2.0
 
         print(f"Starting Boundary Search (Risky). K_ss ~ {k_ss:.2f}")
@@ -177,6 +177,7 @@ class BoundaryFinder:
             res = model.solve()
             history, stats = model.simulate(
                 res['V'],
+                res['Q'],
                 n_steps=self.n_steps,
                 n_batches=self.n_batches,
                 seed=self.seed
@@ -224,7 +225,7 @@ class BoundaryFinder:
 
         if stats['b_min'] > self.threshold:
             print(f"    -> Hit B lower ({stats['b_min']:.1%}).")
-            b_min_scale /= self.expansion_factor
+            b_min_scale *= self.expansion_factor
             expand = True
 
         if stats['b_max'] > self.threshold:
