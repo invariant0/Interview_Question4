@@ -264,80 +264,131 @@ python basic_SMM_mcmc_posterior.py \\
 
 ## Testing
 
-The project uses **pytest** for testing. All tests run on CPU (no GPU required). All test dependencies are included in the main install:
+The project includes **235 automated tests** organised into unit tests and integration tests. All tests run on **CPU only** (no GPU required) and use **pytest** as the test framework.
+
+### Quick Start
 
 ```bash
+# Install the package (includes pytest as a dependency)
 pip install -e .
-```
 
-### Run All Tests
-
-```bash
+# Run all tests
 pytest
-```
 
-### Run Unit Tests Only
-
-```bash
-pytest tests/unit/
-```
-
-### Run Integration Tests Only
-
-```bash
-pytest tests/integration/
-```
-
-### Run a Specific Test File
-
-```bash
-# Example: run grid builder tests
-pytest tests/unit/test_grid_builder.py
-
-# Example: run DL config tests
-pytest tests/unit/dl/test_config.py
-```
-
-### Run with Verbose Output
-
-```bash
+# Run with verbose output
 pytest -v
 ```
 
-### Test Suite Overview
+### Running Specific Test Subsets
 
-**Unit Tests** (`tests/unit/`)
+```bash
+# Unit tests only
+pytest tests/unit/
 
-| File | Module Under Test |
-|---|---|
-| `test_adjust_kernels.py` | VFI adjust-tile kernel (shapes, dtypes, index bounds, constraints) |
-| `test_bellman_kernels.py` | Bellman operators: `compute_ev`, `bellman_update`, `sup_norm_diff` |
-| `test_bond_price_kernels.py` | Bond price update kernel (risk-free pricing, default scenarios) |
-| `test_chunk_accumulate.py` | Tile-index remapping and running-best accumulation |
-| `test_flows.py` | Cash-flow builders: `build_adjust_flow_part1`, `build_debt_components` |
-| `test_grid_builder.py` | Grid construction (productivity, capital, debt grids) |
-| `test_grid_utils.py` | 1-D batch linear interpolation and grid utilities |
-| `test_policies.py` | Policy extraction for basic and risky models |
-| `test_basic_simulator.py` | Basic model simulator (shapes, bounds, convergence, reproducibility) |
-| `test_risky_simulator.py` | Risky model simulator (default/no-default scenarios, depreciation map) |
-| `test_tile_executor.py` | Tile executor: correct tiling coverage with mock kernels |
-| `test_tile_strategy.py` | Optimal chunk-size computation respecting VRAM budget |
-| `test_wait_kernels.py` | Wait-branch flow computation and branch reduction |
-| `dl/test_config.py` | `EconomicParams` and `DeepLearningConfig` validation |
-| `dl/test_normalizers.py` | State-space normalizers (round-trip, boundary, missing-field checks) |
-| `dl/test_econ_functions.py` | Core economic function utilities |
-| `dl/test_fischer_burmeister.py` | Fischer-Burmeister complementarity smoothing |
-| `dl/test_neural_net_factory.py` | Neural network factory construction |
-| `dl/test_state_sampler.py` | State sampling for DL training |
-| `dl/test_transitions.py` | Productivity transition logic |
-| `dl/test_risky_simulator_alignment.py` | Risky simulator alignment checks |
+# Integration tests only
+pytest tests/integration/
 
-**Integration Tests** (`tests/integration/`)
+# A specific test file
+pytest tests/unit/test_grid_builder.py
 
-| File | What It Tests |
-|---|---|
-| `test_basic_integration.py` | End-to-end basic model VFI solve on a tiny grid (convergence, monotonicity) |
-| `test_risky_integration.py` | End-to-end risky-debt model VFI solve (bond-price bounds, default regions) |
-| `test_roundtrip.py` | Full pipeline: solve risky model → simulate → verify results |
-| `test_model_smoke.py` | DL model construction and single training-step smoke tests |
+# A specific test class or method
+pytest tests/unit/test_bellman_kernels.py::TestComputeEV::test_shape_2d
+
+# DL-specific unit tests
+pytest tests/unit/dl/
+```
+
+### Test Directory Layout
+
+```
+tests/
+├── __init__.py
+├── unit/                              # Fast, isolated tests (~seconds)
+│   ├── conftest.py                    # Shared fixtures (make_test_params, etc.)
+│   ├── test_adjust_kernels.py         # VFI adjust-tile kernel
+│   ├── test_basic_simulator.py        # Basic model simulator
+│   ├── test_bellman_kernels.py        # Bellman operators
+│   ├── test_bond_price_kernels.py     # Bond price update kernel
+│   ├── test_chunk_accumulate.py       # Tile-index remapping & accumulation
+│   ├── test_flows.py                  # Cash-flow builders
+│   ├── test_grid_builder.py           # Grid construction
+│   ├── test_grid_utils.py             # Interpolation & grid utilities
+│   ├── test_policies.py               # Policy extraction
+│   ├── test_risky_simulator.py        # Risky model simulator
+│   ├── test_tile_executor.py          # Tile executor
+│   ├── test_tile_strategy.py          # Chunk-size computation
+│   ├── test_wait_kernels.py           # Wait-branch kernels
+│   └── dl/                            # Deep Learning module tests
+│       ├── test_config.py             # EconomicParams & DeepLearningConfig
+│       ├── test_econ_functions.py     # Core economic functions
+│       ├── test_fischer_burmeister.py # Fischer-Burmeister smoothing
+│       ├── test_neural_net_factory.py # Neural network factory
+│       ├── test_normalizers.py        # State-space normalizers
+│       ├── test_risky_simulator_alignment.py # Simulator alignment
+│       ├── test_state_sampler.py      # GPU-side state sampling
+│       └── test_transitions.py        # AR(1) productivity transitions
+└── integration/                       # End-to-end tests (~10-20s each)
+    ├── test_basic_integration.py      # Basic VFI solve on tiny grid
+    ├── test_risky_integration.py      # Risky VFI solve on tiny grid
+    ├── test_roundtrip.py              # Solve → simulate round-trip
+    └── test_model_smoke.py            # DL model smoke tests
+```
+
+### Test Suite Reference
+
+#### Unit Tests (`tests/unit/`)
+
+| File | Module Under Test | Key Checks |
+|---|---|---|
+| `test_adjust_kernels.py` | `vfi.kernels.adjust_kernels` | Output shapes/dtypes, index bounds, constraint enforcement, no NaN |
+| `test_bellman_kernels.py` | `vfi.kernels.bellman_kernels` | `compute_ev` (2-D/3-D), `bellman_update` (adjust/wait/default), `sup_norm_diff` |
+| `test_bond_price_kernels.py` | `vfi.kernels.bond_price_kernels` | Risk-free pricing, default scenarios, relaxation blending, price floor |
+| `test_chunk_accumulate.py` | `vfi.kernels.chunk_accumulate` | Single/multi-tile global indexing, no-improvement passthrough, offset arithmetic |
+| `test_flows.py` | `vfi.flows.adjust_flow`, `debt_components` | Output shapes, no NaN, productivity monotonicity, zero-debt components |
+| `test_grid_builder.py` | `vfi.grids.grid_builder` | Productivity/capital/debt grid shapes, transition matrix stochasticity, sorting |
+| `test_grid_utils.py` | `vfi.grids.grid_utils` | Interpolation at grid points/midpoints, extrapolation clamping, batch dims |
+| `test_policies.py` | `vfi.policies` | Basic/risky policy extraction, default masking, adjust-vs-wait indicator, flat-index decomposition |
+| `test_basic_simulator.py` | `vfi.simulation.basic_simulator` | History shapes, capital bounds, convergence, seed reproducibility |
+| `test_risky_simulator.py` | `vfi.simulation.risky_simulator` | Never-default/always-default scenarios, depreciation map, history shapes |
+| `test_tile_executor.py` | `vfi.chunking.tile_executor` | Output shapes, single-tile/multi-tile kernel call counts, no residual `-inf` |
+| `test_tile_strategy.py` | `vfi.chunking.tile_strategy` | Small/medium/large grids, VRAM budget compliance, symmetric choice dims |
+| `test_wait_kernels.py` | `vfi.kernels.wait_kernels` | Wait-flow shapes, no NaN, constraint penalty, optimal debt index selection |
+| `dl/test_config.py` | `config.economic_params`, `config.dl_config` | Parameter validation, config loading |
+| `dl/test_normalizers.py` | `core.standardize` | Round-trip normalisation, boundary values, missing-field errors |
+| `dl/test_econ_functions.py` | `econ.*` | Production, adjustment cost, cash-flow, collateral, issuance cost functions |
+| `dl/test_fischer_burmeister.py` | `core.math` | Fischer-Burmeister complementarity smoothing |
+| `dl/test_neural_net_factory.py` | `core.nets` | MLP construction with various activations and layer norms |
+| `dl/test_state_sampler.py` | `core.sampling.state_sampler` | GPU-side uniform sampling within bounds |
+| `dl/test_transitions.py` | `core.sampling.transitions` | Log-AR(1) transition, mean reversion, shock scaling |
+| `dl/test_risky_simulator_alignment.py` | `simulator.dl.risky_final` | DL vs VFI simulator alignment |
+
+#### Integration Tests (`tests/integration/`)
+
+| File | What It Tests | Key Checks |
+|---|---|---|
+| `test_basic_integration.py` | `BasicModelVFI.solve()` on a 10×3 grid | Result keys, V-shape, non-negativity, monotonicity in K and Z, policy bounds, transition matrix |
+| `test_risky_integration.py` | `RiskyDebtModelVFI.solve()` on a 8×6×3 grid | Result keys, V-shape, non-negativity, bond-price bounds [0, q_rf], default region, policy index validity |
+| `test_roundtrip.py` | Solve risky VFI → `RiskySimulator.run()` | Simulation completes, history shapes, K/B within grid bounds, finite stats, no NaN |
+| `test_model_smoke.py` | `BasicModelDL` and `RiskFreeModelDL` | Construction, single training-step finiteness, network output shapes |
+
+### Writing New Tests
+
+When adding new tests, follow these conventions:
+
+1. **Force CPU** at the top of every test file:
+   ```python
+   import tensorflow as tf
+   tf.config.set_visible_devices([], 'GPU')
+   ```
+
+2. **Import from the installed package** (`econ_models.*`), not relative paths.
+
+3. **Use `conftest.py` helpers** for common fixtures (e.g., `make_test_params()`).
+
+4. **Place tests** in the correct directory:
+   - `tests/unit/` — tests a single function/class in isolation with synthetic inputs.
+   - `tests/unit/dl/` — tests for deep learning modules (nets, samplers, normalizers, etc.).
+   - `tests/integration/` — tests that exercise multi-component pipelines (VFI solve, simulate, DL train step).
+
+5. **Naming**: files must start with `test_`, classes with `Test`, methods with `test_`.
 

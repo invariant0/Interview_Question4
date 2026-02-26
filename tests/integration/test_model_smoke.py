@@ -1,4 +1,4 @@
-"""Integration smoke tests for BasicInvestmentModel and RiskyModel.
+"""Integration smoke tests for BasicModelDL and RiskFreeModelDL.
 
 These tests construct tiny model instances and verify that a single
 training step executes successfully with finite outputs.  They require
@@ -11,11 +11,6 @@ tf.config.set_visible_devices([], 'GPU')
 
 from econ_models.config.dl_config import DeepLearningConfig
 from econ_models.config.economic_params import EconomicParams
-from econ_models.config.training_config import (
-    DistributionalConfig,
-    EntropyConfig,
-    OptimizationConfig,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +37,7 @@ def _tiny_params():
 
 
 def _tiny_config(**overrides):
-    """Minimal DeepLearningConfig."""
+    """Minimal DeepLearningConfig with all fields required by both models."""
     cfg = DeepLearningConfig()
     cfg.batch_size = 8
     cfg.learning_rate = 1e-3
@@ -67,6 +62,15 @@ def _tiny_config(**overrides):
     cfg.min_q_price = 0.01
     cfg.epsilon_value_default = 0.0
     cfg.epsilon_debt = 0.001
+    # LR scheduling fields (required by both BasicModelDL and RiskFreeModelDL)
+    cfg.lr_decay_rate = 0.99
+    cfg.lr_decay_steps = 100
+    # Euler residual weight (required by BasicModelDL)
+    cfg.euler_residual_weight = 1.0
+    # Polyak scheduling (required by RiskFreeModelDL)
+    cfg.polyak_decay_end = 0.999
+    cfg.polyak_decay_epochs = 10
+    cfg.target_update_freq = 1
     for k, v in overrides.items():
         setattr(cfg, k, v)
     return cfg
@@ -79,7 +83,7 @@ def _basic_bounds():
     }
 
 
-def _risky_bounds():
+def _risk_free_bounds():
     return {
         'k_min': 0.5, 'k_max': 2.0,
         'z_min': 0.8, 'z_max': 1.2,
@@ -88,101 +92,85 @@ def _risky_bounds():
 
 
 # ---------------------------------------------------------------------------
-# BasicInvestmentModel
+# BasicModelDL
 # ---------------------------------------------------------------------------
 
-class TestBasicInvestmentModelSmoke:
-    """Smoke tests for BasicInvestmentModel construction and single step."""
+class TestBasicModelDLSmoke:
+    """Smoke tests for BasicModelDL construction and single step."""
 
     def test_construction(self):
         """Model constructs without error."""
-        from econ_models.dl.models.basic_investment_model import BasicInvestmentModel
-        model = BasicInvestmentModel(
+        from econ_models.dl.basic import BasicModelDL
+        model = BasicModelDL(
             params=_tiny_params(),
             config=_tiny_config(),
-            state_bounds=_basic_bounds(),
-            entropy_config=EntropyConfig(
-                initial_coeff=0.01, final_coeff=0.0,
-                start_epoch=0, decay_epochs=1,
-            ),
-            optimization_config=OptimizationConfig(use_xla=False),
+            bounds=_basic_bounds(),
         )
         assert model is not None
 
     def test_single_train_step_finite(self):
         """A single training step produces finite metrics."""
-        from econ_models.dl.models.basic_investment_model import BasicInvestmentModel
-        model = BasicInvestmentModel(
+        from econ_models.dl.basic import BasicModelDL
+        model = BasicModelDL(
             params=_tiny_params(),
             config=_tiny_config(),
-            state_bounds=_basic_bounds(),
-            entropy_config=EntropyConfig(
-                initial_coeff=0.01, final_coeff=0.0,
-                start_epoch=0, decay_epochs=1,
-            ),
-            optimization_config=OptimizationConfig(use_xla=False),
+            bounds=_basic_bounds(),
         )
-        # Create small batch
         k = tf.random.uniform((8, 1), 0.5, 2.0)
         z = tf.random.uniform((8, 1), 0.8, 1.2)
-        metrics = model._train_step_impl(k, z)
+        eps1 = tf.random.normal((8, 1)) * 0.05
+        eps2 = tf.random.normal((8, 1)) * 0.05
+        metrics = model.train_step(k, z, eps1, eps2)
         assert isinstance(metrics, dict)
         for name, value in metrics.items():
             assert tf.math.is_finite(value), f"Metric {name} is not finite: {value}"
 
-    def test_get_optimal_actions(self):
-        """get_optimal_actions returns finite values with correct shape."""
-        from econ_models.dl.models.basic_investment_model import BasicInvestmentModel
-        model = BasicInvestmentModel(
+    def test_compute_loss_finite(self):
+        """compute_loss returns finite loss values with correct shape."""
+        from econ_models.dl.basic import BasicModelDL
+        model = BasicModelDL(
             params=_tiny_params(),
             config=_tiny_config(),
-            state_bounds=_basic_bounds(),
-            optimization_config=OptimizationConfig(use_xla=False),
+            bounds=_basic_bounds(),
         )
         k = tf.random.uniform((4, 1), 0.5, 2.0)
         z = tf.random.uniform((4, 1), 0.8, 1.2)
-        inv_rate, invest_prob, v_opt = model.get_optimal_actions(k, z)
-        assert inv_rate.shape == (4, 1)
-        assert invest_prob.shape == (4, 1)
-        assert v_opt.shape == (4, 1)
-        assert tf.reduce_all(tf.math.is_finite(inv_rate))
-        assert tf.reduce_all(tf.math.is_finite(invest_prob))
-        assert tf.reduce_all(tf.math.is_finite(v_opt))
+        eps1 = tf.random.normal((4, 1)) * 0.05
+        eps2 = tf.random.normal((4, 1)) * 0.05
+        total_loss, bellman_loss, euler_loss, k_prime = model.compute_loss(
+            k, z, eps1, eps2,
+        )
+        assert tf.math.is_finite(total_loss)
+        assert tf.math.is_finite(bellman_loss)
+        assert tf.math.is_finite(euler_loss)
+        assert tf.math.is_finite(k_prime)
 
 
 # ---------------------------------------------------------------------------
-# RiskyModel
+# RiskFreeModelDL
 # ---------------------------------------------------------------------------
 
-class TestRiskyModelSmoke:
-    """Smoke tests for RiskyModel construction and single step."""
+class TestRiskFreeModelDLSmoke:
+    """Smoke tests for RiskFreeModelDL construction and single step."""
 
     def test_construction(self):
         """Model constructs without error."""
-        from econ_models.dl.models.risky_model import RiskyModel
-        model = RiskyModel(
+        from econ_models.dl.risk_free import RiskFreeModelDL, OptimizationConfig
+        model = RiskFreeModelDL(
             params=_tiny_params(),
             config=_tiny_config(),
-            state_bounds=_risky_bounds(),
-            entropy_config=EntropyConfig(
-                initial_coeff=0.01, final_coeff=0.0,
-                start_epoch=0, decay_epochs=1,
-            ),
+            bounds=_risk_free_bounds(),
             optimization_config=OptimizationConfig(use_xla=False),
         )
         assert model is not None
 
     def test_single_train_step_finite(self):
         """A single training step produces finite metrics."""
-        from econ_models.dl.models.risky_model import RiskyModel
-        model = RiskyModel(
+        from econ_models.dl.risk_free import RiskFreeModelDL, OptimizationConfig
+        model = RiskFreeModelDL(
             params=_tiny_params(),
             config=_tiny_config(),
-            state_bounds=_risky_bounds(),
-            entropy_config=EntropyConfig(
-                initial_coeff=0.01, final_coeff=0.0,
-                start_epoch=0, decay_epochs=1,
-            ),
+            bounds=_risk_free_bounds(),
             optimization_config=OptimizationConfig(use_xla=False),
         )
         k = tf.random.uniform((8, 1), 0.5, 2.0)
@@ -193,20 +181,33 @@ class TestRiskyModelSmoke:
         for name, value in metrics.items():
             assert tf.math.is_finite(value), f"Metric {name} is not finite: {value}"
 
-    def test_get_optimal_actions(self):
-        """get_optimal_actions returns finite values with correct shape."""
-        from econ_models.dl.models.risky_model import RiskyModel
-        model = RiskyModel(
+    def test_networks_output_correct_shapes(self):
+        """Network forward passes return tensors with correct shapes."""
+        from econ_models.dl.risk_free import RiskFreeModelDL, OptimizationConfig
+        model = RiskFreeModelDL(
             params=_tiny_params(),
             config=_tiny_config(),
-            state_bounds=_risky_bounds(),
+            bounds=_risk_free_bounds(),
             optimization_config=OptimizationConfig(use_xla=False),
         )
+        # Prepare normalized inputs (3-D: capital, debt, productivity)
         k = tf.random.uniform((4, 1), 0.5, 2.0)
         b = tf.random.uniform((4, 1), 0.0, 1.0)
         z = tf.random.uniform((4, 1), 0.8, 1.2)
-        k_opt, b_opt, q_opt, v_opt, invest_prob = model.get_optimal_actions(k, b, z)
-        for name, tensor in [("k_opt", k_opt), ("b_opt", b_opt), ("q_opt", q_opt),
-                              ("v_opt", v_opt), ("invest_prob", invest_prob)]:
-            assert tensor.shape == (4, 1), f"{name} shape: {tensor.shape}"
+        k_norm = model.normalizer.normalize_capital(k)
+        z_norm = model.normalizer.normalize_productivity(z)
+        b_norm = model.normalizer.normalize_debt(b)
+        inputs = tf.concat([k_norm, b_norm, z_norm], axis=1)
+
+        v = model.value_net(inputs)
+        k_pol = model.capital_policy_net(inputs)
+        b_pol = model.debt_policy_net(inputs)
+        mu = model.multiplier_net(inputs)
+
+        assert v.shape == (4, 1)
+        assert k_pol.shape == (4, 1)
+        assert b_pol.shape == (4, 1)
+        assert mu.shape == (4, 1)
+        for name, tensor in [("v", v), ("k_pol", k_pol),
+                              ("b_pol", b_pol), ("mu", mu)]:
             assert tf.reduce_all(tf.math.is_finite(tensor)), f"{name} not finite"

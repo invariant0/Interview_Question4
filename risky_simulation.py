@@ -64,7 +64,7 @@ from risky_common import (
 #  Constants
 # ---------------------------------------------------------------------------
 
-DL_EPOCHS: List[int] = [200 * i for i in range(1, 11)]
+DL_EPOCHS: List[int] = [800]
 # DL_EPOCHS: List[int] = [600, 680, 780, 840]
 """Training epochs at which DL checkpoints are evaluated."""
 
