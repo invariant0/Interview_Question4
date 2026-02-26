@@ -53,6 +53,12 @@ class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
         alpha: float = 0.0,
         warmup_start_fraction: float = 0.0,
     ) -> None:
+        """Initialize the warmup cosine decay schedule.
+
+        Store schedule hyper-parameters and pre-build the internal
+        ``CosineDecay`` schedule that takes over after the warm-up
+        window.
+        """
         super().__init__()
         self.initial_learning_rate = initial_learning_rate
         self.warmup_steps = warmup_steps
@@ -68,6 +74,14 @@ class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
         )
 
     def __call__(self, step):
+        """Return the learning rate for the given optimizer step.
+
+        Args:
+            step: Current optimizer step (scalar or 0-d tensor).
+
+        Returns:
+            Scalar learning rate for *step*.
+        """
         step = tf.cast(step, tf.float32)
         warmup_steps = tf.cast(self.warmup_steps, tf.float32)
 
@@ -83,6 +97,7 @@ class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
         return tf.where(step < warmup_steps, warmup_lr, cosine_lr)
 
     def get_config(self):
+        """Return the schedule configuration as a serializable dict."""
         return {
             "initial_learning_rate": self.initial_learning_rate,
             "warmup_steps": self.warmup_steps,

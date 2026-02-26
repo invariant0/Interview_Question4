@@ -607,6 +607,7 @@ def save_moments_table(n_k_arr, n_d_arr, moments, all_moments_list):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main():
+    """Run the full convergence diagnostic over a grid of VFI resolutions."""
     # ══════════════════════════════════════════════════════════════════
     #  GRID CONFIGURATION
     # ══════════════════════════════════════════════════════════════════

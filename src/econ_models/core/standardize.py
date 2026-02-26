@@ -166,12 +166,13 @@ class ParamSpaceNormalizer:
     their economic domain [min, max] to the normalized domain [0, 1],
     which is more suitable for neural network training.
     """
+
     def __init__(self, bonds: dict) -> None:
-        """
-        Initialize normalizer with domain boundaries from configuration.
+        """Initialize normalizer with domain boundaries from configuration.
 
         Args:
-            config: Configuration object containing state space boundaries.
+            bonds: Dictionary containing parameter space boundaries,
+                with keys such as ``rho_min``, ``rho_max``, etc.
 
         Raises:
             ValueError: If required boundaries are not set.

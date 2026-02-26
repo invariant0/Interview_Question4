@@ -496,6 +496,7 @@ def print_convergence_diagnostics(
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main():
+    """Run ensemble analysis: load VFI solutions, simulate, and compute moments."""
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
     import tensorflow as tf
 

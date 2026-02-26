@@ -256,7 +256,16 @@ def build_full_params(overrides: Optional[Dict[str, float]] = None) -> Dict[str,
 def param_tag(params_dict: Dict[str, float]) -> str:
     """Build a filename-safe tag from the four structural parameters.
 
-    Example return value: ``"0.6_0.175_1.005_0.03"``.
+    Parameters
+    ----------
+    params_dict : dict
+        Must contain ``productivity_persistence``, ``productivity_std_dev``,
+        ``adjustment_cost_convex``, and ``adjustment_cost_fixed``.
+
+    Returns
+    -------
+    str
+        Underscore-separated parameter values, e.g. ``"0.6_0.175_1.005_0.03"``.
     """
     return (
         f"{params_dict['productivity_persistence']}"
@@ -267,28 +276,80 @@ def param_tag(params_dict: Dict[str, float]) -> str:
 
 
 def get_econ_params_path(tag: str) -> str:
-    """Return the JSON path for economic parameters identified by *tag*."""
+    """Return the JSON path for economic parameters identified by *tag*.
+
+    Parameters
+    ----------
+    tag : str
+        Filename tag produced by :func:`param_tag`.
+
+    Returns
+    -------
+    str
+    """
     return os.path.join(BASE_DIR, f"hyperparam/prefixed/econ_params_basic_{tag}.json")
 
 
 def get_bounds_path(tag: str) -> str:
-    """Return the JSON path for state-space bounds identified by *tag*."""
+    """Return the JSON path for state-space bounds identified by *tag*.
+
+    Parameters
+    ----------
+    tag : str
+        Filename tag produced by :func:`param_tag`.
+
+    Returns
+    -------
+    str
+    """
     return os.path.join(BASE_DIR, f"hyperparam/autogen/bounds_basic_{tag}.json")
 
 
 def get_vfi_cache_path(tag: str, n_capital: int) -> str:
-    """Return the ``.npz`` cache path for a VFI solution."""
+    """Return the ``.npz`` cache path for a VFI solution.
+
+    Parameters
+    ----------
+    tag : str
+        Filename tag produced by :func:`param_tag`.
+    n_capital : int
+        Number of capital grid points used in the solve.
+
+    Returns
+    -------
+    str
+    """
     return os.path.join(GROUND_TRUTH_DIR, f"golden_vfi_basic_{tag}_{n_capital}.npz")
 
 
 def get_golden_vfi_path(econ_params_list: Sequence[float]) -> str:
-    """Return the golden VFI result path for an economy specified as ``[ρ, σ, γ, F]``."""
+    """Return the golden VFI result path for an economy specified as ``[ρ, σ, γ, F]``.
+
+    Parameters
+    ----------
+    econ_params_list : sequence of float
+        Four structural parameters ``[ρ, σ, γ, F]``.
+
+    Returns
+    -------
+    str
+    """
     rho, sigma, gamma, fixed = econ_params_list
     return os.path.join(GROUND_TRUTH_DIR, f"golden_vfi_results_{rho}_{sigma}_{gamma}_{fixed}.npz")
 
 
 def get_econ_params_path_by_list(econ_params_list: Sequence[float]) -> str:
-    """Return the economic parameters JSON path for ``[ρ, σ, γ, F]``."""
+    """Return the economic parameters JSON path for ``[ρ, σ, γ, F]``.
+
+    Parameters
+    ----------
+    econ_params_list : sequence of float
+        Four structural parameters.
+
+    Returns
+    -------
+    str
+    """
     rho, sigma, gamma, fixed = econ_params_list
     return os.path.join(
         BASE_DIR,
@@ -297,7 +358,17 @@ def get_econ_params_path_by_list(econ_params_list: Sequence[float]) -> str:
 
 
 def get_bounds_path_by_list(econ_params_list: Sequence[float]) -> str:
-    """Return the bounds JSON path for ``[ρ, σ, γ, F]``."""
+    """Return the bounds JSON path for ``[ρ, σ, γ, F]``.
+
+    Parameters
+    ----------
+    econ_params_list : sequence of float
+        Four structural parameters.
+
+    Returns
+    -------
+    str
+    """
     rho, sigma, gamma, fixed = econ_params_list
     return os.path.join(
         BASE_DIR,
@@ -310,7 +381,17 @@ def get_bounds_path_by_list(econ_params_list: Sequence[float]) -> str:
 # ---------------------------------------------------------------------------
 
 def load_econ_params(econ_params_list: Sequence[float]) -> EconomicParams:
-    """Load and return an :class:`EconomicParams` for the given economy."""
+    """Load and return an :class:`EconomicParams` for the given economy.
+
+    Parameters
+    ----------
+    econ_params_list : sequence of float
+        Four structural parameters ``[ρ, σ, γ, F]``.
+
+    Returns
+    -------
+    EconomicParams
+    """
     path = get_econ_params_path_by_list(econ_params_list)
     return EconomicParams(**load_json_file(path))
 

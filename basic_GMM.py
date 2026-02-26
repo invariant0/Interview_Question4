@@ -143,7 +143,20 @@ DF_OVERID_BASIC: int = Q_TOTAL_BASIC - P_GMM          # = 6
 
 @dataclasses.dataclass
 class GMMTreatment:
-    """Defines a GMM estimation treatment."""
+    """Define a GMM estimation treatment.
+
+    Attributes
+    ----------
+    name : str
+        Short identifier (e.g. ``"known_psi1"``).
+    psi1_value : float
+        Fixed adjustment cost ψ₁ used in this treatment.
+    condition_on_adjustment : bool
+        Whether to condition the sample on active adjustment.
+    description : str
+        Human-readable description for logging.
+    """
+
     name: str
     psi1_value: float
     condition_on_adjustment: bool
@@ -172,7 +185,38 @@ TREATMENTS: Dict[str, GMMTreatment] = {
 
 @dataclasses.dataclass
 class GMMReplicationResult:
-    """Results from a single GMM estimation replication."""
+    """Store results from a single GMM estimation replication.
+
+    Attributes
+    ----------
+    replication_id : int
+        Zero-based Monte Carlo replication index.
+    treatment_name : str
+        Treatment label (matches :class:`GMMTreatment.name`).
+    theta_hat : np.ndarray
+        Second-step parameter estimates, shape ``(3,)``.
+    se : np.ndarray
+        Asymptotic standard errors, shape ``(3,)``.
+    Q_min : float
+        Minimized second-step GMM objective.
+    J_stat : float
+        Hansen J-statistic.
+    J_pvalue : float
+        p-value of the J-test.
+    J_df : int
+        Degrees of freedom for the J-test.
+    n_obs_ar1 : int
+        Number of AR(1) moment observations.
+    n_obs_euler : int
+        Number of Euler-equation observations (after conditioning).
+    wall_time : float
+        Total elapsed time in seconds.
+    theta_hat_step1 : np.ndarray
+        First-step parameter estimates, shape ``(3,)``.
+    Q_step1 : float
+        First-step minimized objective.
+    """
+
     replication_id: int
     treatment_name: str
     theta_hat: np.ndarray
@@ -203,7 +247,20 @@ def _golden_vfi_path() -> str:
 
 
 def _ensure_golden_vfi(econ_params: EconomicParams, bounds: Dict) -> str:
-    """Generate the golden VFI solution if it does not exist."""
+    """Generate the golden VFI solution if it does not exist.
+
+    Parameters
+    ----------
+    econ_params : EconomicParams
+        Economic parameters at the true values.
+    bounds : dict
+        State-space bounds (k_min, k_max, z_min, z_max).
+
+    Returns
+    -------
+    str
+        File path to the golden VFI ``.npz`` archive.
+    """
     path = _golden_vfi_path()
     if os.path.exists(path):
         logger.info("Golden VFI already exists: %s", path)
@@ -241,9 +298,19 @@ def generate_gmm_panel(
 ) -> Dict[str, np.ndarray]:
     """Generate VFI-simulated panel for GMM estimation.
 
+    Parameters
+    ----------
+    econ_params : EconomicParams
+        Structural economic parameters.
+    bonds_config : dict
+        Validated bonds/bounds configuration.
+    vfi_solution : Any
+        Pre-loaded VFI solution arrays.
+
     Returns
     -------
-    dict with keys K_curr, K_next, Z_curr, Z_next  (each N×T_eff).
+    dict
+        Keys ``K_curr``, ``K_next``, ``Z_curr``, ``Z_next`` (each N × T_eff).
     """
     data_gen = synthetic_data_generator(
         econ_params_benchmark=econ_params,
@@ -284,8 +351,18 @@ def construct_gmm_variables(
     and capital K_{i,t}.  Log-productivity is backed out as
     z_{i,t} = y_{i,t} − θ k_{i,t}  (y=ln Y, k=ln K).
 
-    Returns dict of (N, T) arrays: inv_rate, backed_out_ln_z, YK_ratio,
-    Y_curr, K_curr, K_next.
+    Parameters
+    ----------
+    panel : dict
+        Raw simulation panel with ``K_curr``, ``K_next``, ``Z_curr`` arrays.
+    econ_params : EconomicParams
+        Structural parameters (depreciation rate and capital share used).
+
+    Returns
+    -------
+    dict
+        ``(N, T)`` arrays: ``inv_rate``, ``backed_out_ln_z``, ``YK_ratio``,
+        ``Y_curr``, ``K_curr``, ``K_next``.
     """
     delta = econ_params.depreciation_rate
     theta = econ_params.capital_share
@@ -333,10 +410,17 @@ def condition_sample(
 
     Uses a 3-period window: (t-1, t, t+1) for instruments needing i_{t-1}.
 
+    Parameters
+    ----------
+    variables : dict
+        Derived observable arrays from :func:`construct_gmm_variables`.
+    treatment : GMMTreatment
+        Treatment specifying whether to condition on active adjustment.
+
     Returns
     -------
     aligned : dict
-        Flattened 1-D arrays with suffixes _tm1, _t, _tp1.
+        Flattened 1-D arrays with suffixes ``_tm1``, ``_t``, ``_tp1``.
     n_obs : int
         Number of valid (firm, time) observations.
     firm_ids : np.ndarray
@@ -451,7 +535,21 @@ def compute_euler_residuals_basic(
 
     All terms use observable quantities only (Y, K, investment rate).
 
-    Returns shape (n_obs,).
+    Parameters
+    ----------
+    aligned : dict
+        Flattened observation arrays with time suffixes.
+    psi0 : float
+        Convex adjustment cost parameter.
+    econ_params : EconomicParams
+        Structural parameters (β, δ, θ).
+    treatment : GMMTreatment
+        Treatment configuration (provides ψ₁ offset).
+
+    Returns
+    -------
+    np.ndarray
+        Euler residuals, shape ``(n_obs,)``.
     """
     beta  = econ_params.discount_factor
     delta = econ_params.depreciation_rate
@@ -492,7 +590,15 @@ def build_instruments_basic(
 
     z_t = (1, i_t, i_{t-1}, Y_t/K_t, Y_{t-1}/K_{t-1}, ln K_t)ᵀ
 
-    Returns shape (n_obs, 6).
+    Parameters
+    ----------
+    aligned : dict
+        Flattened observation arrays with time suffixes.
+
+    Returns
+    -------
+    np.ndarray
+        Instrument matrix, shape ``(n_obs, 6)``.
     """
     n_obs = len(aligned["inv_rate_t"])
     z = np.column_stack([
@@ -580,7 +686,23 @@ def compute_clustered_covariance(
 ) -> np.ndarray:
     """Compute firm-clustered long-run covariance Ŝ of moment conditions.
 
-    Returns shape (9, 9).
+    Parameters
+    ----------
+    g_obs_ar1 : tuple of np.ndarray
+        Per-observation AR(1) moment arrays ``(g1, g2, g3)``.
+    g_euler_obs : np.ndarray
+        Per-observation Euler moment matrix, shape ``(n_obs_euler, 6)``.
+    firm_ids_ar1 : np.ndarray
+        Firm index for each AR(1) observation.
+    firm_ids_euler : np.ndarray
+        Firm index for each Euler-equation observation.
+    N_firms : int
+        Total number of firms.
+
+    Returns
+    -------
+    np.ndarray
+        Clustered covariance matrix Ŝ, shape ``(9, 9)``.
     """
     g1, g2, g3 = g_obs_ar1
 
@@ -632,6 +754,24 @@ def gmm_objective(
     """Evaluate the GMM quadratic objective Q(θ) = ḡ(θ)ᵀ W ḡ(θ).
 
     Includes soft bound enforcement via quadratic penalty.
+
+    Parameters
+    ----------
+    theta : np.ndarray
+        Candidate parameter vector ``[ρ, σ, ψ₀]``.
+    panel : dict
+        Raw simulation panel arrays.
+    treatment : GMMTreatment
+        Active estimation treatment.
+    econ_params : EconomicParams
+        Fixed structural parameters.
+    W : np.ndarray
+        Weighting matrix, shape ``(9, 9)``.
+
+    Returns
+    -------
+    float
+        Objective value (lower is better).
     """
     bounds_lo = np.array([GMM_SEARCH_BOUNDS[k][0] for k in GMM_PARAM_ORDER])
     bounds_hi = np.array([GMM_SEARCH_BOUNDS[k][1] for k in GMM_PARAM_ORDER])
@@ -665,10 +805,25 @@ def two_step_gmm(
 ) -> Dict[str, Any]:
     """Run two-step efficient GMM estimation.
 
-    Step 1: Identity weighting matrix → first-step estimate θ̂₁
-    Step 2: Optimal W = Ŝ⁻¹ from θ̂₁ → second-step θ̂₂
+    Step 1: Identity weighting matrix → first-step estimate θ̂₁.
+    Step 2: Optimal W = Ŝ⁻¹ from θ̂₁ → second-step θ̂₂.
 
-    Returns dict with theta_hat, Q_min, W_optimal, S_hat, etc.
+    Parameters
+    ----------
+    panel : dict
+        Raw simulation panel arrays.
+    treatment : GMMTreatment
+        Active estimation treatment.
+    econ_params : EconomicParams
+        Fixed structural parameters.
+    n_starts : int, optional
+        Number of Sobol starting points for Nelder-Mead (default 10).
+
+    Returns
+    -------
+    dict
+        Keys: ``theta_hat``, ``Q_min``, ``W_optimal``, ``S_hat``,
+        ``theta_hat_step1``, ``Q_step1``, ``info_final``, ``g_bar_final``.
     """
     bounds_lo = np.array([GMM_SEARCH_BOUNDS[k][0] for k in GMM_PARAM_ORDER])
     bounds_hi = np.array([GMM_SEARCH_BOUNDS[k][1] for k in GMM_PARAM_ORDER])
@@ -787,7 +942,29 @@ def compute_gmm_inference(
 ) -> Dict[str, Any]:
     """Compute GMM standard errors (sandwich formula) and Hansen J-test.
 
-    Returns dict with se, Sigma, G, J_stat, J_pvalue, J_df.
+    Parameters
+    ----------
+    theta_hat : np.ndarray
+        Second-step parameter estimates, shape ``(3,)``.
+    panel : dict
+        Raw simulation panel arrays.
+    treatment : GMMTreatment
+        Active estimation treatment.
+    econ_params : EconomicParams
+        Fixed structural parameters.
+    W : np.ndarray
+        Optimal weighting matrix, shape ``(9, 9)``.
+    S_hat : np.ndarray
+        Clustered covariance of moment conditions, shape ``(9, 9)``.
+    n_obs : int
+        Effective observation count for variance scaling.
+    h_rel : float, optional
+        Relative step size for central-difference Jacobian (default 0.01).
+
+    Returns
+    -------
+    dict
+        Keys: ``se``, ``Sigma``, ``G``, ``J_stat``, ``J_pvalue``, ``J_df``.
     """
     # ── Jacobian G = ∂ḡ/∂θᵀ via central differences ──
     G = np.zeros((Q_TOTAL_BASIC, P_GMM))
@@ -849,7 +1026,25 @@ def run_single_gmm_estimation(
 ) -> GMMReplicationResult:
     """Run one complete GMM estimation (data generation + two-step + inference).
 
-    Returns a GMMReplicationResult.
+    Parameters
+    ----------
+    econ_params : EconomicParams
+        Structural parameters at true values.
+    bonds_config : dict
+        Validated bonds/bounds configuration.
+    vfi_solution : Any
+        Pre-loaded VFI solution arrays.
+    treatment : GMMTreatment
+        Treatment specification.
+    replication_id : int, optional
+        Monte Carlo replication index (default 0).
+    n_starts : int, optional
+        Sobol starting-point count for Nelder-Mead (default 10).
+
+    Returns
+    -------
+    GMMReplicationResult
+        Complete result object with estimates, SEs, and test statistics.
     """
     t0 = time.perf_counter()
 
@@ -927,7 +1122,18 @@ def run_single_gmm_estimation(
 def aggregate_gmm_results(
     results: List[GMMReplicationResult],
 ) -> Dict[str, Any]:
-    """Aggregate MC replications into summary statistics."""
+    """Aggregate Monte Carlo replications into summary statistics.
+
+    Parameters
+    ----------
+    results : list of GMMReplicationResult
+        Individual replication results.
+
+    Returns
+    -------
+    dict
+        Summary with bias, RMSE, coverage, J-test rejection rate, etc.
+    """
     R = len(results)
     thetas = np.array([r.theta_hat for r in results])     # (R, 3)
     ses = np.array([r.se for r in results])                # (R, 3)
@@ -1016,7 +1222,23 @@ def compute_moment_diagnostics(
 ) -> Dict[str, Any]:
     """Compute per-moment diagnostics at θ̂.
 
-    Returns individual moment values and weighted contributions.
+    Parameters
+    ----------
+    theta_hat : np.ndarray
+        Estimated parameter vector, shape ``(3,)``.
+    panel : dict
+        Raw simulation panel arrays.
+    treatment : GMMTreatment
+        Active estimation treatment.
+    econ_params : EconomicParams
+        Fixed structural parameters.
+    W : np.ndarray
+        Weighting matrix, shape ``(9, 9)``.
+
+    Returns
+    -------
+    dict
+        Per-moment names, values, and absolute values.
     """
     g_bar, _ = compute_stacked_moments(theta_hat, panel, treatment, econ_params)
 
@@ -1055,7 +1277,15 @@ def save_replication_csv(
     results: List[GMMReplicationResult],
     output_path: str,
 ) -> None:
-    """Save per-replication results to CSV."""
+    """Save per-replication results to CSV.
+
+    Parameters
+    ----------
+    results : list of GMMReplicationResult
+        Individual replication results to serialize.
+    output_path : str
+        Destination CSV file path.
+    """
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     fieldnames = [
         "replication_id", "treatment",
@@ -1089,7 +1319,15 @@ def save_replication_csv(
 
 
 def save_summary_json(summary: Dict[str, Any], output_path: str) -> None:
-    """Save MC summary to JSON."""
+    """Save Monte Carlo summary dictionary to a JSON file.
+
+    Parameters
+    ----------
+    summary : dict
+        Aggregated summary statistics.
+    output_path : str
+        Destination JSON file path.
+    """
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(summary, f, indent=2)
@@ -1099,7 +1337,18 @@ def save_summary_json(summary: Dict[str, Any], output_path: str) -> None:
 # ── LaTeX Table Generators ──
 
 def generate_latex_table35(summary: Dict[str, Any]) -> str:
-    r"""Table 35: Basic Model GMM Recovery with Known ψ₁."""
+    r"""Generate LaTeX for Table 35: Basic Model GMM Recovery with Known ψ₁.
+
+    Parameters
+    ----------
+    summary : dict
+        Aggregated MC summary for the *known_psi1* treatment.
+
+    Returns
+    -------
+    str
+        Complete LaTeX table source.
+    """
     lines = [
         r"\begin{table}[htbp]",
         r"\centering",
@@ -1135,7 +1384,18 @@ def generate_latex_table35(summary: Dict[str, Any]) -> str:
 
 
 def generate_latex_table36(summary: Dict[str, Any]) -> str:
-    r"""Table 36: Basic Model GMM Recovery under ψ₁ = 0 Misspecification."""
+    r"""Generate LaTeX for Table 36: GMM Recovery under ψ₁ = 0 Misspecification.
+
+    Parameters
+    ----------
+    summary : dict
+        Aggregated MC summary for the *psi1_zero_misspec* treatment.
+
+    Returns
+    -------
+    str
+        Complete LaTeX table source.
+    """
     lines = [
         r"\begin{table}[htbp]",
         r"\centering",
@@ -1171,7 +1431,18 @@ def generate_latex_table36(summary: Dict[str, Any]) -> str:
 
 
 def generate_latex_table34(summaries: Dict[str, Dict]) -> str:
-    r"""Table 34: GMM Monte Carlo Design."""
+    r"""Generate LaTeX for Table 34: GMM Monte Carlo Experimental Design.
+
+    Parameters
+    ----------
+    summaries : dict
+        Mapping of treatment names to their MC summary dicts.
+
+    Returns
+    -------
+    str
+        Complete LaTeX table source.
+    """
     R = max(s["R"] for s in summaries.values())
     mean_time = np.mean([s["mean_wall_time"] for s in summaries.values()])
     lines = [
@@ -1203,7 +1474,20 @@ def generate_latex_table39(
     gmm_summary: Dict[str, Any],
     smm_summary: Dict[str, Any],
 ) -> str:
-    r"""Table 39: GMM versus SMM Recovery of Shared Parameters."""
+    r"""Generate LaTeX for Table 39: GMM versus SMM Recovery comparison.
+
+    Parameters
+    ----------
+    gmm_summary : dict
+        Aggregated GMM MC summary (known ψ₁ treatment).
+    smm_summary : dict
+        Aggregated SMM MC summary.
+
+    Returns
+    -------
+    str
+        Complete LaTeX table source.
+    """
     # Shared parameters: ρ, σ, ψ₀ (indices 0, 1, 2 in both orderings)
     # In SMM, param order is [ρ, σ, ξ, F] → shared indices [0, 1, 2]
     lines = [
@@ -1244,7 +1528,19 @@ def save_gmm_results(
     output_dir: str,
     smm_summary: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Save all GMM results: CSVs, JSONs, and LaTeX tables."""
+    """Save all GMM results: CSVs, JSONs, and LaTeX tables.
+
+    Parameters
+    ----------
+    all_results : dict
+        Mapping of treatment name to list of :class:`GMMReplicationResult`.
+    all_summaries : dict
+        Mapping of treatment name to aggregated summary dict.
+    output_dir : str
+        Directory in which to write output files.
+    smm_summary : dict, optional
+        SMM summary for cross-method comparison tables.
+    """
     os.makedirs(output_dir, exist_ok=True)
 
     # Per-treatment: CSV and summary JSON

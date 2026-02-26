@@ -1,55 +1,25 @@
-"""
-Deep Learning solver for the Risky Debt Model using Actor-Critic with Policy Networks.
+"""Actor-critic deep learning solver for the risky debt model.
 
-This module implements a neural network approach to solving the
-risky debt model with endogenous default and bond pricing.
-Uses policy networks for capital, debt, and investment decisions with
-Fischer-Burmeister complementarity conditions.
+Solve the risky debt model with endogenous default and bond pricing
+using neural-network policy and value functions.  Six networks are
+jointly optimised:
 
-UPDATED: Separated Debt and Default networks. Default policy now uses
-Approach 1 (Direct Value Comparison) - trains to predict optimal default
-based on whether V_continue <= 0. Single debt policy network optimised
-through the combined invest-path and wait-path value objectives.
+* **Value** and **continuous** critics — double-sampling Bellman
+  residuals and Fischer-Burmeister complementarity.
+* **Capital**, **debt**, **investment**, and **equity-issuance**
+  policies — unified gradient tape with a single optimiser.
+* **Default** policy — binary cross-entropy against advantage-based
+  labels from the continuous critic.
 
-UPDATED: Added target network for default policy. Bond estimation now uses
-target default policy for stability. Default policy supervision uses
-target RHS (average across two shocks) for stable labels.
+Key design choices:
 
-UPDATED: Added Investment Decision Network mechanism (same as BasicModelDL_FINAL).
-- Investment policy outputs prob(invest) ∈ [0, 1]
-- Capital policy determines k' if investing; k'_no_invest = (1-δ)k otherwise
-- Investment advantage supervision via BCE loss
-
-UPDATED: Shared debt policy network across invest / no-invest paths.
-- Single debt_policy_net selects B' for both branches.
-- Separate equity_issuance_net_invest / equity_issuance_net_noinvest per branch.
-- Unified policy loss optimises all policy nets jointly in one gradient tape
-  with a single optimizer and single gradient-clipping step.
-
-UPDATED: Sigmoid denormalized policy. Capital and debt policy networks
-use sigmoid activation outputting values in [0, 1], then denormalized
-to physical units via the state-space normalizer:
-  K' = denorm_k(sigmoid_k),  B' = denorm_b(sigmoid_b).
-Bounded to [k_min, k_max] and [b_min, b_max] naturally.
-
-UPDATED: XLA compilation for acceleration.
-
-UPDATED: Unified policy optimizer.
-- Single policy optimizer covers: capital_policy_net + debt_policy_net
-  + equity_issuance_net_invest + equity_issuance_net_noinvest.
-- Combined loss = invest_value_obj + noinvest_value_obj + equity_FB
-  + entropy terms, with a single gradient-clipping step.
-
-UPDATED: Added Issuance Decision Gate mechanism (single-network, STE).
-- Single equity issuance network with linear output x.
-- Issuance value = relu(x) ∈ [0, ∞) (computed inline).
-- Issuance gate = STE(sigmoid(x)): forward uses hard {0,1}, backward uses sigmoid gradient.
-- Effective equity issuance = relu(x).
-- Issuance cost = STE_gate * (eta_0 + eta_1 * effective_issuance).
-- Fischer-Burmeister complementarity: FB(e, payout + e) = 0
-  ensures equity is issued only to cover negative payouts.
-- STE gate replaces the soft sigmoid for a crisp 0/1 decision while
-  preserving differentiability through the straight-through gradient.
+- Sigmoid-denormalised capital / debt policies bounded to the state space.
+- Shared debt policy across invest / no-invest paths.
+- Straight-through estimator (STE) gates for investment and equity
+  issuance decisions.
+- Target networks for value, continuous, and default critics with
+  Polyak averaging.
+- XLA compilation for accelerated training steps.
 """
 
 from typing import Tuple, Dict, NamedTuple
@@ -84,26 +54,11 @@ tfd = tfp.distributions
 
 
 class PolicyOutputs(NamedTuple):
-    """Container for policy network outputs.
+    """Container for all policy-network outputs at a given state.
 
-    Capital and debt policies use sigmoid output in [0, 1],
-    denormalized to physical units via the state-space normalizer:
-    K' = denorm_k(sigmoid_k) ∈ [k_min, k_max],
-    B' = denorm_b(sigmoid_b) ∈ [b_min, b_max].
-
-    Shared debt policy network across invest / no-invest paths;
-    separate equity-issuance networks per path (invest / no-invest).
-
-    Attributes:
-        k_prime: Next-period capital = denorm_k(sigmoid_k).
-        b_prime: Next-period debt from shared debt policy network.
-        default_prob: Default probability from the default policy network.
-        invest_prob: Investment probability from the investment network.
-        k_prime_no_invest: Next-period capital if not investing ``(1-δ)k``.
-        equity_issuance_invest: Effective equity issuance for invest path.
-        issuance_gate_prob_invest: Issuance gate probability for invest path.
-        equity_issuance_noinvest: Effective equity issuance for no-invest path.
-        issuance_gate_prob_noinvest: Issuance gate probability for no-invest path.
+    Capital and debt outputs are sigmoid values denormalised to physical
+    units.  Equity-issuance outputs are computed per path (invest /
+    no-invest) with STE gating.
     """
 
     k_prime: tf.Tensor
@@ -118,15 +73,23 @@ class PolicyOutputs(NamedTuple):
 
 
 class OptimizationConfig(NamedTuple):
-    """Configuration for training optimisations.
-
-    Attributes:
-        use_xla: Enable XLA compilation for faster execution.
-        prefetch_buffer: ``tf.data`` prefetch buffer size.
-    """
+    """XLA and prefetch settings for the training loop."""
 
     use_xla: bool = True
     prefetch_buffer: int = tf.data.AUTOTUNE
+
+
+class _AnnealSchedule(NamedTuple):
+    """Linear weight-annealing schedule between two epoch boundaries.
+
+    The weight holds at *w_start* until *epoch_start*, linearly ramps
+    to *w_end* by *epoch_end*, then holds at *w_end*.
+    """
+
+    w_start: float
+    w_end: float
+    epoch_start: int
+    epoch_end: int
 
 
 # ---------------------------------------------------------------------------
@@ -194,10 +157,8 @@ class RiskyModelDL_FINAL:
     def _load_pretrained_weights(self) -> None:
         """Load pretrained weights from risk-free checkpoints.
 
-        Loads value, capital-policy, and debt-policy weights and
-        synchronises all target networks.  Validates that every required
-        weight file exists before loading any, so the model is never left
-        in a partially-initialised state.
+        Validate that every required weight file exists before loading
+        any, so the model is never left in a partially-initialised state.
 
         Raises:
             FileNotFoundError: If any required weight file is missing.
@@ -229,21 +190,114 @@ class RiskyModelDL_FINAL:
         self.continuous_net.load_weights(str(weight_paths["value"]))
         self.target_continuous_net.set_weights(self.continuous_net.get_weights())
 
-        # Load pretrained debt weights into shared debt policy net
-        # self.debt_policy_net.load_weights(str(weight_paths["debt"]))
-        # self.capital_policy_net.load_weights(str(weight_paths["capital"]))
         self.default_policy_net.load_weights(str(weight_paths["default"]))
         self.target_default_policy_net.set_weights(self.default_policy_net.get_weights())
         print(f"[pretrained] Loaded weights from {ckpt_dir} (epoch {epoch})")
         print("[pretrained] Target networks synchronised.")
 
-    def _cache_constants(self) -> None:
-        """Pre-cast economic parameters as TensorFlow constants.
+    # ------------------------------------------------------------------
+    # Initialisation helpers
+    # ------------------------------------------------------------------
 
-        Only constants that appear directly in loss expressions, bond
-        pricing orchestration, or the training loop are cached here.
-        Economic function internals handle their own casting.
+    @staticmethod
+    def _init_anneal(
+        config_start,
+        config_end,
+        config_epoch_start,
+        config_epoch_end,
+        default_w: float,
+        default_epoch_start: int = 0,
+        default_epoch_end: int = 1,
+    ) -> Tuple["_AnnealSchedule", tf.Variable]:
+        """Create an annealing schedule paired with a non-trainable variable.
+
+        The ``tf.Variable`` is initialised to *w_start* so that
+        XLA-compiled training steps pick up per-epoch updates via
+        ``Variable.assign``.
         """
+        w_start = config_start if config_start is not None else default_w
+        w_end = config_end if config_end is not None else default_w
+        ep_start = (
+            config_epoch_start if config_epoch_start is not None
+            else default_epoch_start
+        )
+        ep_end = (
+            config_epoch_end if config_epoch_end is not None
+            else default_epoch_end
+        )
+        schedule = _AnnealSchedule(w_start, w_end, ep_start, ep_end)
+        var = tf.Variable(w_start, dtype=TENSORFLOW_DTYPE, trainable=False)
+        return schedule, var
+
+    @staticmethod
+    def _linear_anneal(schedule: "_AnnealSchedule", epoch: int) -> float:
+        """Return the linearly annealed weight for *epoch*.
+
+        Holds at *w_start* before *epoch_start*, ramps linearly to
+        *w_end* by *epoch_end*, and holds at *w_end* afterwards.
+        """
+        if epoch <= schedule.epoch_start:
+            return schedule.w_start
+        if epoch >= schedule.epoch_end:
+            return schedule.w_end
+        span = max(schedule.epoch_end - schedule.epoch_start, 1)
+        t = (epoch - schedule.epoch_start) / span
+        return schedule.w_start + t * (schedule.w_end - schedule.w_start)
+
+    def _build_net(
+        self, activation: str, name: str,
+    ) -> tf.keras.Model:
+        """Build a 3-input, 1-output MLP with the shared config."""
+        return NeuralNetFactory.build_mlp(
+            input_dim=3,
+            output_dim=1,
+            config=self.config,
+            output_activation=activation,
+            scale_factor=1.0,
+            name=name,
+        )
+
+    def _build_net_with_target(
+        self, activation: str, name: str,
+    ) -> Tuple[tf.keras.Model, tf.keras.Model]:
+        """Build an online network and its Polyak-averaged target copy."""
+        net = self._build_net(activation, name)
+        target = self._build_net(activation, f"Target{name}")
+        target.set_weights(net.get_weights())
+        return net, target
+
+    @staticmethod
+    def _compute_ste_gate(
+        logit: tf.Tensor,
+    ) -> Tuple[tf.Tensor, tf.Tensor]:
+        """Compute equity issuance value and STE gate from a raw logit.
+
+        Returns ``(relu(logit), ste_gate)`` where *ste_gate* uses the
+        straight-through estimator: forward is hard {0, 1}, backward
+        flows through ``sigmoid``.
+        """
+        value = tf.nn.relu(logit)
+        soft = tf.math.sigmoid(logit)
+        hard = tf.cast(soft > 0.5, TENSORFLOW_DTYPE)
+        gate = soft + tf.stop_gradient(hard - soft)
+        return value, gate
+
+    @staticmethod
+    def _get_optimizer_lr(
+        optimizer: tf.keras.optimizers.Optimizer,
+    ) -> float:
+        """Return the current learning rate of *optimizer* as a float."""
+        lr = optimizer.learning_rate
+        if isinstance(lr, tf.keras.optimizers.schedules.LearningRateSchedule):
+            return float(lr(optimizer.iterations))
+        return float(lr)
+
+    # ------------------------------------------------------------------
+    # Construction
+    # ------------------------------------------------------------------
+
+    def _cache_constants(self) -> None:
+        """Pre-cast economic parameters and build annealing schedules."""
         self.beta = tf.constant(self.params.discount_factor, dtype=TENSORFLOW_DTYPE)
         self.one_minus_delta = tf.constant(
             1.0 - self.params.depreciation_rate, dtype=TENSORFLOW_DTYPE
@@ -252,34 +306,25 @@ class RiskyModelDL_FINAL:
         self.two = tf.constant(2.0, dtype=TENSORFLOW_DTYPE)
         self.entropy_eps = tf.constant(1e-7, dtype=TENSORFLOW_DTYPE)
 
-        # Learning-rate exponential decay parameters (from config JSON)
+        # Validate required scheduling fields
         self.config.validate_scheduling_fields(
             ['lr_decay_rate', 'lr_decay_steps', 'lr_policy_scale',
              'polyak_averaging_decay', 'polyak_decay_end',
              'polyak_decay_epochs', 'target_update_freq'],
-            'RiskyModelDL_FINAL'
+            'RiskyModelDL_FINAL',
         )
         self._lr_decay_rate = self.config.lr_decay_rate
         self._lr_decay_steps = self.config.lr_decay_steps
         self._lr_policy_scale = self.config.lr_policy_scale
-
-        # Policy warm-up: linear LR ramp over the first N epochs
         self._policy_warmup_epochs = (
             self.config.policy_warmup_epochs
             if self.config.policy_warmup_epochs is not None else 0
         )
 
-        # Polyak (target-network) decay annealing: start fast, stabilise later
-        self._polyak_start = self.config.polyak_averaging_decay
-        self._polyak_end = self.config.polyak_decay_end
-        self._polyak_anneal_epochs = self.config.polyak_decay_epochs
-
-        # Bond pricing orchestration constants
+        # Bond pricing and equity-issuance cost constants
         self.one_minus_tax = tf.constant(
             1.0 - self.params.corporate_tax_rate, dtype=TENSORFLOW_DTYPE
         )
-
-        # Equity issuance cost constants (inline, no IssuanceCostCalculator)
         self.eta_0 = tf.constant(
             self.params.equity_issuance_cost_fixed, dtype=TENSORFLOW_DTYPE
         )
@@ -287,250 +332,86 @@ class RiskyModelDL_FINAL:
             self.params.equity_issuance_cost_linear, dtype=TENSORFLOW_DTYPE
         )
 
-        # Equity FB constraint weight (configurable multiplier)
-        _eq_fb_w = self.config.equity_fb_weight
-        if _eq_fb_w is None:
-            _eq_fb_w = 1.0
-
-        # Epoch-scheduled equity FB weight: linearly anneal from start → end
-        self._eq_fb_w_start = (
-            self.config.equity_fb_weight_start
-            if self.config.equity_fb_weight_start is not None else _eq_fb_w
-        )
-        self._eq_fb_w_end = (
-            self.config.equity_fb_weight_end
-            if self.config.equity_fb_weight_end is not None else _eq_fb_w
-        )
-        self._eq_fb_epoch_start = (
-            self.config.equity_fb_start_epoch
-            if self.config.equity_fb_start_epoch is not None else 0
-        )
-        self._eq_fb_epoch_end = (
-            self.config.equity_fb_end_epoch
-            if self.config.equity_fb_end_epoch is not None else 1
-        )
-        # tf.Variable so the XLA-compiled _train_step_impl sees updates each epoch
-        self.equity_fb_weight = tf.Variable(
-            self._eq_fb_w_start, dtype=TENSORFLOW_DTYPE, trainable=False
+        # --- Annealing schedules (Polyak, loss weights, entropy) ---
+        self._polyak_schedule = _AnnealSchedule(
+            w_start=self.config.polyak_averaging_decay,
+            w_end=self.config.polyak_decay_end,
+            epoch_start=0,
+            epoch_end=self.config.polyak_decay_epochs,
         )
 
-        # Continuous-net negative-value leak for policy update:
-        # v_cont > 0 → pass through;  v_cont <= 0 → v_cont * weight
-        # Weight anneals linearly from start → end over [start_epoch, end_epoch]
-        self._cont_leak_w_start = (
-            self.config.continuous_leak_weight_start
-            if self.config.continuous_leak_weight_start is not None else 1.0
+        _eq_fb_default = (
+            self.config.equity_fb_weight
+            if self.config.equity_fb_weight is not None else 1.0
         )
-        self._cont_leak_w_end = (
-            self.config.continuous_leak_weight_end
-            if self.config.continuous_leak_weight_end is not None else 1.0
+        self._eq_fb_schedule, self.equity_fb_weight = self._init_anneal(
+            self.config.equity_fb_weight_start, self.config.equity_fb_weight_end,
+            self.config.equity_fb_start_epoch, self.config.equity_fb_end_epoch,
+            default_w=_eq_fb_default,
         )
-        self._cont_leak_epoch_start = (
-            self.config.continuous_leak_start_epoch
-            if self.config.continuous_leak_start_epoch is not None else 0
+        self._cont_leak_schedule, self.continuous_leak_weight = self._init_anneal(
+            self.config.continuous_leak_weight_start,
+            self.config.continuous_leak_weight_end,
+            self.config.continuous_leak_start_epoch,
+            self.config.continuous_leak_end_epoch,
+            default_w=1.0,
         )
-        self._cont_leak_epoch_end = (
-            self.config.continuous_leak_end_epoch
-            if self.config.continuous_leak_end_epoch is not None else 1
+        self._ent_cap_schedule, self.entropy_capital_weight = self._init_anneal(
+            self.config.entropy_capital_weight_start,
+            self.config.entropy_capital_weight_end,
+            self.config.entropy_capital_start_epoch,
+            self.config.entropy_capital_end_epoch,
+            default_w=0.0,
         )
-        # tf.Variable so the XLA-compiled _train_step_impl sees updates each epoch
-        self.continuous_leak_weight = tf.Variable(
-            self._cont_leak_w_start, dtype=TENSORFLOW_DTYPE, trainable=False
+        self._ent_debt_schedule, self.entropy_debt_weight = self._init_anneal(
+            self.config.entropy_debt_weight_start,
+            self.config.entropy_debt_weight_end,
+            self.config.entropy_debt_start_epoch,
+            self.config.entropy_debt_end_epoch,
+            default_w=0.0,
         )
-
-        # --- Bernoulli entropy regularization: capital policy ---
-        self._ent_cap_w_start = (
-            self.config.entropy_capital_weight_start
-            if self.config.entropy_capital_weight_start is not None else 0.0
-        )
-        self._ent_cap_w_end = (
-            self.config.entropy_capital_weight_end
-            if self.config.entropy_capital_weight_end is not None else 0.0
-        )
-        self._ent_cap_epoch_start = (
-            self.config.entropy_capital_start_epoch
-            if self.config.entropy_capital_start_epoch is not None else 0
-        )
-        self._ent_cap_epoch_end = (
-            self.config.entropy_capital_end_epoch
-            if self.config.entropy_capital_end_epoch is not None else 1
-        )
-        self.entropy_capital_weight = tf.Variable(
-            self._ent_cap_w_start, dtype=TENSORFLOW_DTYPE, trainable=False
-        )
-
-        # --- Bernoulli entropy regularization: debt policy ---
-        self._ent_debt_w_start = (
-            self.config.entropy_debt_weight_start
-            if self.config.entropy_debt_weight_start is not None else 0.0
-        )
-        self._ent_debt_w_end = (
-            self.config.entropy_debt_weight_end
-            if self.config.entropy_debt_weight_end is not None else 0.0
-        )
-        self._ent_debt_epoch_start = (
-            self.config.entropy_debt_start_epoch
-            if self.config.entropy_debt_start_epoch is not None else 0
-        )
-        self._ent_debt_epoch_end = (
-            self.config.entropy_debt_end_epoch
-            if self.config.entropy_debt_end_epoch is not None else 1
-        )
-        self.entropy_debt_weight = tf.Variable(
-            self._ent_debt_w_start, dtype=TENSORFLOW_DTYPE, trainable=False
-        )
-
-        # --- Bernoulli entropy regularization: default policy ---
-        self._ent_def_w_start = (
-            self.config.entropy_default_weight_start
-            if self.config.entropy_default_weight_start is not None else 0.0
-        )
-        self._ent_def_w_end = (
-            self.config.entropy_default_weight_end
-            if self.config.entropy_default_weight_end is not None else 0.0
-        )
-        self._ent_def_epoch_start = (
-            self.config.entropy_default_start_epoch
-            if self.config.entropy_default_start_epoch is not None else 0
-        )
-        self._ent_def_epoch_end = (
-            self.config.entropy_default_end_epoch
-            if self.config.entropy_default_end_epoch is not None else 1
-        )
-        self.entropy_default_weight = tf.Variable(
-            self._ent_def_w_start, dtype=TENSORFLOW_DTYPE, trainable=False
+        self._ent_def_schedule, self.entropy_default_weight = self._init_anneal(
+            self.config.entropy_default_weight_start,
+            self.config.entropy_default_weight_end,
+            self.config.entropy_default_start_epoch,
+            self.config.entropy_default_end_epoch,
+            default_w=0.0,
         )
 
     def _build_networks(self) -> None:
-        """Construct neural networks following the blueprint architecture."""
-        # Value Network V(s; θV)
-        self.value_net = NeuralNetFactory.build_mlp(
-            input_dim=3,
-            output_dim=1,
-            config=self.config,
-            output_activation="linear",
-            scale_factor=1.0,
-            name="ValueNet"
+        """Construct all neural networks and cache trainable-variable lists."""
+        # Critics (with Polyak-averaged targets)
+        self.value_net, self.target_value_net = self._build_net_with_target(
+            "linear", "ValueNet",
         )
-        
-        # Target Value Network Vtarg(s; θV-)
-        self.target_value_net = NeuralNetFactory.build_mlp(
-            input_dim=3,
-            output_dim=1,
-            config=self.config,
-            output_activation="linear",
-            scale_factor=1.0,
-            name="TargetValueNet"
-        )
-        self.target_value_net.set_weights(self.value_net.get_weights())
-
-        # Continuous Network Vcont(s; θC)
-        self.continuous_net = NeuralNetFactory.build_mlp(
-            input_dim=3,
-            output_dim=1,
-            config=self.config,
-            output_activation="linear",
-            scale_factor=1.0,
-            name="ContinuousNet"
-        )
-        self.target_continuous_net = NeuralNetFactory.build_mlp(
-            input_dim=3,
-            output_dim=1,
-            config=self.config,
-            output_activation="linear",
-            scale_factor=1.0,
-            name="TargetContinuousNet"
-        )
-        self.target_continuous_net.set_weights(self.continuous_net.get_weights())
-
-        # Investment decision network 
-        self.investment_decision_net = NeuralNetFactory.build_mlp(
-            input_dim=3,
-            output_dim=1,
-            config=self.config,
-            output_activation="sigmoid",
-            scale_factor=1.0,
-            name="InvestmentNet"
+        self.continuous_net, self.target_continuous_net = self._build_net_with_target(
+            "linear", "ContinuousNet",
         )
 
-        # Capital Policy Network πk(s; θπ_k) -> sigmoid ∈ (0, 1)
-        #   K' = denorm_k(sigmoid_k) ∈ [k_min, k_max]
-        self.capital_policy_net = NeuralNetFactory.build_mlp(
-            input_dim=3,
-            output_dim=1,
-            config=self.config,
-            output_activation="sigmoid",
-            scale_factor=1.0,
-            name="CapitalPolicyNet"
+        # Policy networks (sigmoid outputs denormalised to state bounds)
+        self.investment_decision_net = self._build_net("sigmoid", "InvestmentNet")
+        self.capital_policy_net = self._build_net("sigmoid", "CapitalPolicyNet")
+        self.debt_policy_net = self._build_net("sigmoid", "DebtPolicyNet")
+
+        # Default policy (with Polyak-averaged target for bond pricing)
+        self.default_policy_net, self.target_default_policy_net = (
+            self._build_net_with_target("sigmoid", "DefaultPolicyNet")
         )
 
-        # Debt Policy Network (shared across invest / no-invest paths)
-        # πb(s; θ) -> sigmoid ∈ (0, 1)
-        #   B' = denorm_b(sigmoid_b) ∈ [b_min, b_max]
-        self.debt_policy_net = NeuralNetFactory.build_mlp(
-            input_dim=3,
-            output_dim=1,
-            config=self.config,
-            output_activation="sigmoid",
-            scale_factor=1.0,
-            name="DebtPolicyNet"
+        # Equity-issuance networks (linear output → inline relu / STE gate)
+        self.equity_issuance_net_invest = self._build_net(
+            "linear", "EquityIssuanceNetInvest",
+        )
+        self.equity_issuance_net_noinvest = self._build_net(
+            "linear", "EquityIssuanceNetNoinvest",
         )
 
-        # Default Policy Network πd(s; θπ_d) -> prob(default)
-        self.default_policy_net = NeuralNetFactory.build_mlp(
-            input_dim=3,
-            output_dim=1,
-            config=self.config,
-            output_activation="sigmoid",
-            scale_factor=1.0,
-            name="DefaultPolicyNet"
-        )
-
-        # Target Default Policy Network πd_targ(s; θπ_d-)
-        # Used in bond pricing to decouple default predictions from
-        # debt policy gradients, preventing the default net from
-        # artificially depressing bond prices and suppressing borrowing.
-        self.target_default_policy_net = NeuralNetFactory.build_mlp(
-            input_dim=3,
-            output_dim=1,
-            config=self.config,
-            output_activation="sigmoid",
-            scale_factor=1.0,
-            name="TargetDefaultPolicyNet"
-        )
-        self.target_default_policy_net.set_weights(
-            self.default_policy_net.get_weights()
-        )
-
-        # Equity Issuance Network (INVEST path) -> linear output x
-        #   issuance_value = relu(x), gate = sigmoid(x), computed inline
-        self.equity_issuance_net_invest = NeuralNetFactory.build_mlp(
-            input_dim=3,
-            output_dim=1,
-            config=self.config,
-            output_activation="linear",
-            scale_factor=1.0,
-            name="EquityIssuanceNetInvest"
-        )
-
-        # Equity Issuance Network (NO-INVEST path) -> linear output x
-        #   issuance_value = relu(x), gate = sigmoid(x), computed inline
-        self.equity_issuance_net_noinvest = NeuralNetFactory.build_mlp(
-            input_dim=3,
-            output_dim=1,
-            config=self.config,
-            output_activation="linear",
-            scale_factor=1.0,
-            name="EquityIssuanceNetNoinvest"
-        )
-
-        # Cache trainable variables for faster access
-        # Unified policy variables (single optimizer, single gradient clip)
+        # Cached trainable-variable lists (single optimizer, single clip)
         self._policy_variables = (
-            self.capital_policy_net.trainable_variables +
-            self.debt_policy_net.trainable_variables +
-            self.equity_issuance_net_invest.trainable_variables +
-            self.equity_issuance_net_noinvest.trainable_variables
+            self.capital_policy_net.trainable_variables
+            + self.debt_policy_net.trainable_variables
+            + self.equity_issuance_net_invest.trainable_variables
+            + self.equity_issuance_net_noinvest.trainable_variables
         )
         self._investment_variables = self.investment_decision_net.trainable_variables
         self._value_variables = self.value_net.trainable_variables
@@ -538,30 +419,19 @@ class RiskyModelDL_FINAL:
         self._default_variables = self.default_policy_net.trainable_variables
 
     def _build_optimizers(self) -> None:
-        """Build Adam optimizers with cosine-annealing learning-rate schedules.
+        """Build Adam optimisers with cosine-annealing LR schedules.
 
-        The LR decays from ``initial_learning_rate`` to
-        ``alpha * initial_learning_rate`` over the full training run
-        (``epochs * steps_per_epoch`` steps) following a half-cosine curve.
-        ``alpha`` is derived from ``lr_decay_rate`` to keep the config
-        interface unchanged.
-
-        Policy and default optimizers use a ``WarmupCosineDecay`` schedule
-        when ``policy_warmup_epochs > 0``: the LR linearly ramps from
-        ~0 to full policy LR over the warm-up window, then cosine-decays.
-        Critics always start at full LR (no warm-up).
+        Critics use plain ``CosineDecay``; policy / default optimisers
+        use ``WarmupCosineDecay`` when *policy_warmup_epochs* > 0.
         """
         total_steps = self.config.epochs * self.config.steps_per_epoch
-        # Use lr_decay_rate as the minimum LR fraction (alpha)
         alpha = self._lr_decay_rate
-
         warmup_steps = self._policy_warmup_epochs * self.config.steps_per_epoch
+        policy_base_lr = self.config.learning_rate * self._lr_policy_scale
 
-        def _make_critic_lr(lr: float) -> tf.keras.optimizers.schedules.CosineDecay:
+        def _make_critic_lr(lr: float):
             return tf.keras.optimizers.schedules.CosineDecay(
-                initial_learning_rate=lr,
-                decay_steps=total_steps,
-                alpha=alpha,
+                initial_learning_rate=lr, decay_steps=total_steps, alpha=alpha,
             )
 
         def _make_policy_lr(lr: float):
@@ -572,18 +442,12 @@ class RiskyModelDL_FINAL:
                     decay_steps=total_steps - warmup_steps,
                     alpha=alpha,
                 )
-            return tf.keras.optimizers.schedules.CosineDecay(
-                initial_learning_rate=lr,
-                decay_steps=total_steps,
-                alpha=alpha,
-            )
+            return _make_critic_lr(lr)
 
         critic_lr = _make_critic_lr(self.config.learning_rate)
-        policy_lr = _make_policy_lr(self.config.learning_rate * self._lr_policy_scale)
-        investment_lr = _make_policy_lr(self.config.learning_rate * self._lr_policy_scale)
-        default_lr = _make_policy_lr(self.config.learning_rate * self._lr_policy_scale)
-
-        policy_lr = _make_policy_lr(self.config.learning_rate * self._lr_policy_scale)
+        policy_lr = _make_policy_lr(policy_base_lr)
+        investment_lr = _make_policy_lr(policy_base_lr)
+        default_lr = _make_policy_lr(policy_base_lr)
 
         self.value_optimizer = tf.keras.optimizers.Adam(learning_rate=critic_lr)
         self.continuous_optimizer = tf.keras.optimizers.Adam(learning_rate=critic_lr)
@@ -594,12 +458,12 @@ class RiskyModelDL_FINAL:
         warmup_tag = f", warmup_steps={warmup_steps}" if warmup_steps > 0 else ""
         print(
             f"[LR] CosineDecay: critic={self.config.learning_rate:.2e}, "
-            f"policy={self.config.learning_rate * self._lr_policy_scale:.2e}, "
+            f"policy={policy_base_lr:.2e}, "
             f"alpha={alpha}, total_steps={total_steps}{warmup_tag}"
         )
 
     def _compile_train_functions(self) -> None:
-        """Wrap training functions with ``tf.function`` and optional XLA."""
+        """Wrap core training functions with ``tf.function`` / XLA."""
         use_xla = self.optimization_config.use_xla
         self._optimized_train_step = tf.function(
             self._train_step_impl, jit_compile=use_xla,
@@ -609,42 +473,21 @@ class RiskyModelDL_FINAL:
         )
 
     def _soft_update_targets_impl(self, decay: tf.Tensor) -> None:
-        """Polyak-average update of all target-network weights.
-
-        Args:
-            decay: Averaging coefficient in ``[0, 1]``.  Higher values
-                retain more of the existing target network.
-        """
-        for target_var, source_var in zip(
-            self.target_value_net.trainable_variables,
-            self.value_net.trainable_variables
-        ):
-            target_var.assign(
-                decay * target_var + (1.0 - decay) * source_var
-            )
-        for target_var, source_var in zip(
-            self.target_continuous_net.trainable_variables,
-            self.continuous_net.trainable_variables
-        ):
-            target_var.assign(
-                decay * target_var + (1.0 - decay) * source_var
-            )
-        for target_var, source_var in zip(
-            self.target_default_policy_net.trainable_variables,
-            self.default_policy_net.trainable_variables
-        ):
-            target_var.assign(
-                decay * target_var + (1.0 - decay) * source_var
-            )
+        """Polyak-average all target networks toward their online sources."""
+        target_source_pairs = [
+            (self.target_value_net, self.value_net),
+            (self.target_continuous_net, self.continuous_net),
+            (self.target_default_policy_net, self.default_policy_net),
+        ]
+        for target_net, source_net in target_source_pairs:
+            for t_var, s_var in zip(
+                target_net.trainable_variables,
+                source_net.trainable_variables,
+            ):
+                t_var.assign(decay * t_var + (1.0 - decay) * s_var)
 
     def _build_summary_writer(self) -> None:
-        """Create TensorBoard summary writer.
-
-        Logs are written to ``<log_dir_prefix>/<timestamp>/``.
-        Launch TensorBoard with::
-
-            tensorboard --logdir <log_dir_prefix>
-        """
+        """Create a TensorBoard summary writer under *log_dir_prefix*."""
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         log_dir = os.path.join(self.log_dir_prefix, timestamp)
         self.summary_writer = tf.summary.create_file_writer(log_dir)
@@ -687,45 +530,23 @@ class RiskyModelDL_FINAL:
         b: tf.Tensor,
         training: bool = False,
     ) -> PolicyOutputs:
-        """Compute all policy network outputs from online networks.
-
-        Shared debt policy network across invest / no-invest paths;
-        separate equity-issuance networks per path.
-        Capital policy determines k' if investing; k'_no_invest = (1-δ)k otherwise.
-
-        Args:
-            inputs: Normalised state inputs, shape ``(batch, 3)``.
-            k: Current capital, shape ``(batch, 1)``.
-            b: Current debt, shape ``(batch, 1)``.
-            training: Whether networks run in training mode.
-
-        Returns:
-            ``PolicyOutputs`` with shared debt, per-path equity, and shared
-            capital/investment/default outputs.
-        """
+        """Compute all policy-network outputs from online networks."""
         k_prime = self.normalizer.denormalize_capital(
             self.capital_policy_net(inputs, training=training)
         )
         b_prime = self.normalizer.denormalize_debt(
             self.debt_policy_net(inputs, training=training)
         )
-
         default_prob = self.default_policy_net(inputs, training=training)
         invest_prob = self.investment_decision_net(inputs, training=training)
         k_prime_no_invest = self.one_minus_delta * k
 
-        # Equity issuance: separate invest / noinvest nets
-        issuance_logit_invest = self.equity_issuance_net_invest(inputs, training=training)
-        equity_issuance_invest = tf.nn.relu(issuance_logit_invest)
-        issuance_gate_soft_invest = tf.math.sigmoid(issuance_logit_invest)
-        issuance_gate_hard_invest = tf.cast(issuance_gate_soft_invest > self.half, TENSORFLOW_DTYPE)
-        issuance_gate_prob_invest = issuance_gate_soft_invest + tf.stop_gradient(issuance_gate_hard_invest - issuance_gate_soft_invest)
+        # Equity issuance per path (STE gate)
+        logit_inv = self.equity_issuance_net_invest(inputs, training=training)
+        equity_issuance_invest, gate_prob_invest = self._compute_ste_gate(logit_inv)
 
-        issuance_logit_noinvest = self.equity_issuance_net_noinvest(inputs, training=training)
-        equity_issuance_noinvest = tf.nn.relu(issuance_logit_noinvest)
-        issuance_gate_soft_noinvest = tf.math.sigmoid(issuance_logit_noinvest)
-        issuance_gate_hard_noinvest = tf.cast(issuance_gate_soft_noinvest > self.half, TENSORFLOW_DTYPE)
-        issuance_gate_prob_noinvest = issuance_gate_soft_noinvest + tf.stop_gradient(issuance_gate_hard_noinvest - issuance_gate_soft_noinvest)
+        logit_noinv = self.equity_issuance_net_noinvest(inputs, training=training)
+        equity_issuance_noinvest, gate_prob_noinv = self._compute_ste_gate(logit_noinv)
 
         return PolicyOutputs(
             k_prime=k_prime,
@@ -734,9 +555,9 @@ class RiskyModelDL_FINAL:
             invest_prob=invest_prob,
             k_prime_no_invest=k_prime_no_invest,
             equity_issuance_invest=equity_issuance_invest,
-            issuance_gate_prob_invest=issuance_gate_prob_invest,
+            issuance_gate_prob_invest=gate_prob_invest,
             equity_issuance_noinvest=equity_issuance_noinvest,
-            issuance_gate_prob_noinvest=issuance_gate_prob_noinvest,
+            issuance_gate_prob_noinvest=gate_prob_noinv,
         )
 
     def estimate_bond_price(
@@ -747,26 +568,19 @@ class RiskyModelDL_FINAL:
         eps: tf.Tensor = None,
         use_target: bool = True,
     ) -> tf.Tensor:
-        """
-        Estimate bond price using value network for default determination.
-
-        Uses vectorized MC sampling: shapes the entire (batch * n_samples)
-        tensor through the value net in a single forward pass.
-        Economic computations delegate to centralized econ modules.
+        """Estimate bond price via vectorised Monte Carlo sampling.
 
         Args:
-            k_prime: Next period capital.
-            b_prime: Next period debt.
+            k_prime: Next-period capital.
+            b_prime: Next-period debt.
             z_curr: Current productivity.
-            eps: Pre-sampled shocks of shape (batch_size, n_samples).
-                 If None, samples fresh shocks (backward-compatible).
-            use_target: If True, use ``target_continuous_net`` (stable,
-                for label/target computation).  If False, use the online
-                ``value_net`` (allows k_prime gradient flow for policy
-                updates).
+            eps: Pre-sampled shocks ``(batch, n_samples)``.  Sampled
+                fresh when *None*.
+            use_target: Use target default net (stable labels) when
+                *True*; online net (gradient flow) when *False*.
 
         Returns:
-            bond_price: Estimated bond price q
+            Bond price *q* of shape ``(batch, 1)``.
         """
         batch_size = tf.shape(z_curr)[0]
         n_samples = self.config.mc_sample_number_bond_priceing
@@ -843,40 +657,20 @@ class RiskyModelDL_FINAL:
         equity_issuance: tf.Tensor,
         issuance_gate_prob: tf.Tensor,
     ) -> Tuple[tf.Tensor, tf.Tensor]:
-        """
-        Compute dividend (cash flow) for the risky model (invest branch).
-
-        Issuance cost uses the learned gate probability instead of the
-        hard indicator: ``gate_prob * (eta_0 + eta_1 * e)``.
-
-        Args:
-            equity_issuance: Effective equity issuance (raw * gate_prob).
-            issuance_gate_prob: Issuance gate probability ∈ [0, 1].
+        """Compute dividend for the invest branch.
 
         Returns:
-            (dividend, payout) — *payout* is the raw operating payout
-            **before** equity issuance and its cost.  Both shape ``(batch, 1)``.
+            ``(dividend, payout)`` where *payout* is the raw operating
+            payout before equity issuance and its cost.
         """
-        # Production: (1-tau) * Z * K^theta
         revenue = self.one_minus_tax * ProductionFunctions.cobb_douglas(k, z, self.params)
-
-        # Investment: I = K' - (1-delta)*K
         investment = ProductionFunctions.calculate_investment(k, k_prime, self.params)
-
-        # Adjustment cost
         adj_cost, _ = AdjustmentCostCalculator.calculate(investment, k, self.params)
-
-        # Debt flow
         debt_inflow, tax_shield = DebtFlowCalculator.calculate(b_prime, q, self.params)
 
-        # Raw payout before equity issuance
         payout = revenue + debt_inflow + tax_shield - adj_cost - investment - b
-        payout_neg = tf.where(payout < 0.0, payout, tf.zeros_like(payout))
-        # issuance_cost = issuance_gate_prob * (self.eta_0 + self.eta_1 * payout_neg)
-        # Gated issuance cost: gate_prob * (eta_0 + eta_1 * e)
         issuance_cost = issuance_gate_prob * (self.eta_0 + self.eta_1 * equity_issuance)
-        dividend = payout - issuance_cost
-        return dividend, payout
+        return payout - issuance_cost, payout
 
     def _compute_dividend_no_invest(
         self,
@@ -888,64 +682,37 @@ class RiskyModelDL_FINAL:
         equity_issuance: tf.Tensor,
         issuance_gate_prob: tf.Tensor,
     ) -> Tuple[tf.Tensor, tf.Tensor]:
-        """
-        Compute dividend when NOT investing (no adjustment cost, no investment).
-        k' = (1-delta)*k, investment = 0.
+        """Compute dividend for the no-invest branch.
 
-        Issuance cost uses the learned gate probability instead of the
-        hard indicator: ``gate_prob * (eta_0 + eta_1 * e)``.
-
-        Args:
-            equity_issuance: Effective equity issuance (raw * gate_prob).
-            issuance_gate_prob: Issuance gate probability ∈ [0, 1].
+        No investment or adjustment cost; ``k' = (1-delta) k``.
 
         Returns:
-            (dividend, payout) — *payout* is the raw operating payout
-            **before** equity issuance and its cost.  Both shape ``(batch, 1)``.
+            ``(dividend, payout)`` where *payout* is the raw operating
+            payout before equity issuance and its cost.
         """
-        # Production: (1-tau) * Z * K^theta
         revenue = self.one_minus_tax * ProductionFunctions.cobb_douglas(k, z, self.params)
-
-        # Debt flow
         debt_inflow, tax_shield = DebtFlowCalculator.calculate(b_prime, q, self.params)
 
-        # Raw payout (no investment, no adjustment cost)
         payout = revenue + debt_inflow + tax_shield - b
-        payout_neg = tf.where(payout < 0.0, -payout, tf.zeros_like(payout))
-        # issuance_cost = issuance_gate_prob * (self.eta_0 + self.eta_1 * payout_neg)
-        # Gated issuance cost: gate_prob * (eta_0 + eta_1 * e)
         issuance_cost = issuance_gate_prob * (self.eta_0 + self.eta_1 * equity_issuance)
-        dividend = payout - issuance_cost
-        return dividend, payout
+        return payout - issuance_cost, payout
 
     def _train_step_impl(
         self,
         k: tf.Tensor,
         b: tf.Tensor,
-        z: tf.Tensor
+        z: tf.Tensor,
     ) -> Dict[str, tf.Tensor]:
-        """
-        Optimized fused training step implementation (XLA-compatible).
+        """Execute one fused training step (XLA-compatible).
 
         Training order:
-        0.  Default policy update — uses target RHS for supervision.
-            Runs FIRST so that bond pricing inside the policy tape
-            sees a freshly calibrated default net.
-        1.  Unified policy update — single tape covering invest + wait
-            paths.  Loss = invest_value_obj + wait_value_obj + equity_FB
-            + entropy (capital, debt, default).  One optimizer step.
-        1b. Investment decision update (BCE supervision).
-        2.  Continuous critic update — AiO loss (target = max over 2 paths)
-        3.  Value critic update — FB loss
 
-        ARCHITECTURE: Single unified policy optimizer with one
-        gradient-clipping step.  All policy nets (capital, debt,
-        equity_invest, equity_noinvest) updated jointly.
-
-        PERFORMANCE DESIGN:
-        - Bond prices computed ONCE outside tape for labels.
-        - Policy nets re-run inside tape for gradient flow (cheap).
-        - 2 MC bond price calls inside tape (invest/wait, shared debt).
+        0. Default policy (target-RHS supervision).
+        1. Unified policy (invest + wait value objectives, equity FB,
+           entropy regularisation).
+        1b. Investment decision (BCE supervision).
+        2. Continuous critic (double-sampling AiO loss).
+        3. Value critic (Fischer-Burmeister loss).
         """
         batch_size = tf.shape(k)[0]
         
@@ -976,18 +743,15 @@ class RiskyModelDL_FINAL:
             self.debt_policy_net(inputs, training=False)
         )
 
-        # Equity issuance for label computation (frozen, per-path, STE gate)
-        issuance_logit_inf_invest = self.equity_issuance_net_invest(inputs, training=False)
-        equity_issuance_inf_invest = tf.nn.relu(issuance_logit_inf_invest)
-        issuance_gate_soft_inf_invest = tf.math.sigmoid(issuance_logit_inf_invest)
-        issuance_gate_hard_inf_invest = tf.cast(issuance_gate_soft_inf_invest > self.half, TENSORFLOW_DTYPE)
-        issuance_gate_prob_inf_invest = issuance_gate_soft_inf_invest + tf.stop_gradient(issuance_gate_hard_inf_invest - issuance_gate_soft_inf_invest)
-
-        issuance_logit_inf_noinvest = self.equity_issuance_net_noinvest(inputs, training=False)
-        equity_issuance_inf_noinvest = tf.nn.relu(issuance_logit_inf_noinvest)
-        issuance_gate_soft_inf_noinvest = tf.math.sigmoid(issuance_logit_inf_noinvest)
-        issuance_gate_hard_inf_noinvest = tf.cast(issuance_gate_soft_inf_noinvest > self.half, TENSORFLOW_DTYPE)
-        issuance_gate_prob_inf_noinvest = issuance_gate_soft_inf_noinvest + tf.stop_gradient(issuance_gate_hard_inf_noinvest - issuance_gate_soft_inf_noinvest)
+        # Frozen equity issuance for label computation (STE gate)
+        logit_inf_inv = self.equity_issuance_net_invest(inputs, training=False)
+        equity_issuance_inf_invest, issuance_gate_prob_inf_invest = (
+            self._compute_ste_gate(logit_inf_inv)
+        )
+        logit_inf_noinv = self.equity_issuance_net_noinvest(inputs, training=False)
+        equity_issuance_inf_noinvest, issuance_gate_prob_inf_noinvest = (
+            self._compute_ste_gate(logit_inf_noinv)
+        )
 
         # Bond prices (expensive MC — computed ONCE, shared debt)
         q_invest = self.estimate_bond_price(k_prime_inf, b_prime_inf, z, eps_bond)
@@ -1035,8 +799,7 @@ class RiskyModelDL_FINAL:
         investment_label = tf.stop_gradient(
             tf.cast((investment_advantage_1 + investment_advantage_2) > 0.0, TENSORFLOW_DTYPE)
         )
-        # investment_label_soft = tf.math.sigmoid(investment_advantage_1 + investment_advantage_2)
-        
+
         # Bernoulli entropy helper
         def _bernoulli_entropy(p):
             p_c = tf.clip_by_value(p, self.entropy_eps, 1.0 - self.entropy_eps)
@@ -1091,19 +854,17 @@ class RiskyModelDL_FINAL:
             b_sigmoid = self.debt_policy_net(inputs, training=True)
             b_prime = self.normalizer.denormalize_debt(b_sigmoid)
 
-            # Equity issuance (invest path, live, gated, STE)
-            issuance_logit_invest = self.equity_issuance_net_invest(inputs, training=True)
-            equity_issuance_invest = tf.nn.relu(issuance_logit_invest)
-            issuance_gate_soft_invest = tf.math.sigmoid(issuance_logit_invest)
-            issuance_gate_hard_invest = tf.cast(issuance_gate_soft_invest > self.half, TENSORFLOW_DTYPE)
-            issuance_gate_prob_invest = issuance_gate_soft_invest + tf.stop_gradient(issuance_gate_hard_invest - issuance_gate_soft_invest)
+            # Live equity issuance (invest path, STE gate)
+            logit_inv_live = self.equity_issuance_net_invest(inputs, training=True)
+            equity_issuance_invest, issuance_gate_prob_invest = (
+                self._compute_ste_gate(logit_inv_live)
+            )
 
-            # Equity issuance (no-invest path, live, gated, STE)
-            issuance_logit_noinvest = self.equity_issuance_net_noinvest(inputs, training=True)
-            equity_issuance_noinvest = tf.nn.relu(issuance_logit_noinvest)
-            issuance_gate_soft_noinvest = tf.math.sigmoid(issuance_logit_noinvest)
-            issuance_gate_hard_noinvest = tf.cast(issuance_gate_soft_noinvest > self.half, TENSORFLOW_DTYPE)
-            issuance_gate_prob_noinvest = issuance_gate_soft_noinvest + tf.stop_gradient(issuance_gate_hard_noinvest - issuance_gate_soft_noinvest)
+            # Live equity issuance (no-invest path, STE gate)
+            logit_noinv_live = self.equity_issuance_net_noinvest(inputs, training=True)
+            equity_issuance_noinvest, issuance_gate_prob_noinvest = (
+                self._compute_ste_gate(logit_noinv_live)
+            )
 
             # --- Invest path value objective ---
             q_invest_live = self.estimate_bond_price(k_prime, b_prime, z, eps_bond, use_target=False)
@@ -1331,16 +1092,13 @@ class RiskyModelDL_FINAL:
         self,
         k: tf.Tensor,
         b: tf.Tensor,
-        z: tf.Tensor
+        z: tf.Tensor,
     ) -> Dict[str, tf.Tensor]:
-        """
-        Public interface for training step.
-        Delegates to XLA-optimized implementation.
-        """
+        """Public training-step interface; delegates to XLA-compiled impl."""
         return self._optimized_train_step(k, b, z)
-    
+
     def _run_epoch(self, data_iter, current_decay: float) -> Dict[str, float]:
-        """Run one training epoch with optimized target updates."""
+        """Run one training epoch with periodic target-network updates."""
         epoch_logs = {}
         target_update_freq = self.config.target_update_freq
         decay_tensor = tf.constant(current_decay, dtype=TENSORFLOW_DTYPE)
@@ -1359,41 +1117,33 @@ class RiskyModelDL_FINAL:
         return epoch_logs
     
     def train(self) -> None:
+        """Run the full training loop with logging and checkpointing."""
+        ps = self._polyak_schedule
         print(f"Starting Risky Model Training for {self.config.epochs} epochs...")
         print(f"  └─ Pretrained from: {self.pretrained_checkpoint_dir} "
               f"(epoch {self.pretrained_epoch})")
-        print("Architecture: Value Net + Continuous Net + Capital Net (sigmoid) + Shared Debt Policy Net (sigmoid) + Investment Net + Default Net + Equity Issuance Net Invest/Noinvest (linear -> inline relu/sigmoid)")
-        print("Policy output: K' = denorm_k(sigmoid_k),  B' = denorm_b(sigmoid_b)  (sigmoid + denormalization, shared across paths)")
-        print("Equity Issuance: per-path e = relu(x), cost = STE(sigmoid(x))*(eta0) + eta1*e, FB(e, payout+e)=0")
-        print("Investment Policy: prob(invest) with STE, same mechanism as BasicModelDL_FINAL")
-        print("Default Policy: Approach 1 (Direct Value Comparison)")
-        print("Bond Estimation: Uses TARGET default policy for stability")
-        print("Default Supervision: Uses target RHS (avg of 2 shocks) for labels")
         print(f"\n=== Optimization Settings ===")
         print(f"Batch size: {self.config.batch_size}")
-        print(f"LR schedule: CosineDecay alpha={self._lr_decay_rate} over {self.config.epochs * self.config.steps_per_epoch} steps")
+        total_steps = self.config.epochs * self.config.steps_per_epoch
+        print(f"LR schedule: CosineDecay alpha={self._lr_decay_rate} over {total_steps} steps")
         if self._policy_warmup_epochs > 0:
-            print(f"Policy warm-up: {self._policy_warmup_epochs} epochs ({self._policy_warmup_epochs * self.config.steps_per_epoch} steps) — critics train at full LR, policy LR ramps 0→full")
+            warmup_steps = self._policy_warmup_epochs * self.config.steps_per_epoch
+            print(f"Policy warm-up: {self._policy_warmup_epochs} epochs ({warmup_steps} steps)")
         else:
-            print(f"Policy warm-up: disabled")
-        print(f"Polyak decay: {self._polyak_start} → {self._polyak_end} over {self._polyak_anneal_epochs} epochs")
+            print("Policy warm-up: disabled")
+        print(f"Polyak decay: {ps.w_start} → {ps.w_end} over {ps.epoch_end} epochs")
         print(f"MC bond pricing samples: {self.config.mc_sample_number_bond_priceing}")
-        print(f"Equity FB weight: {self._eq_fb_w_start} → {self._eq_fb_w_end} over epochs [{self._eq_fb_epoch_start}, {self._eq_fb_epoch_end}]")
-        print(f"Continuous leak (neg V_cont): {self._cont_leak_w_start} → {self._cont_leak_w_end} over epochs [{self._cont_leak_epoch_start}, {self._cont_leak_epoch_end}]")
-        print(f"Entropy capital: {self._ent_cap_w_start} → {self._ent_cap_w_end} over epochs [{self._ent_cap_epoch_start}, {self._ent_cap_epoch_end}]")
-        print(f"Entropy debt: {self._ent_debt_w_start} → {self._ent_debt_w_end} over epochs [{self._ent_debt_epoch_start}, {self._ent_debt_epoch_end}]")
-        print(f"Entropy default: {self._ent_def_w_start} → {self._ent_def_w_end} over epochs [{self._ent_def_epoch_start}, {self._ent_def_epoch_end}]")
-        print(f"Bond pricing tensor size: {self.config.batch_size * self.config.mc_sample_number_bond_priceing}")
-        print(f"Training step: XLA={self.optimization_config.use_xla}")
-        print(f"Target updates: XLA={self.optimization_config.use_xla}")
-        print(f"Target Update Frequency: every {self.config.target_update_freq} steps")
+        for label, sched in self._anneal_schedules().items():
+            s = sched[0]
+            print(f"{label}: {s.w_start} → {s.w_end} over epochs [{s.epoch_start}, {s.epoch_end}]")
+        print(f"XLA={self.optimization_config.use_xla} | "
+              f"Target update freq: every {self.config.target_update_freq} steps")
         print("=" * 40 + "\n")
-        
-        # Build dataset pipeline
+
         dataset = self._build_dataset()
         data_iter = iter(dataset)
 
-        # Warm-up: trace the function once before timing (includes XLA compilation)
+        # XLA warm-up
         print("Warming up XLA compilation (this may take a minute)...")
         k_warmup, b_warmup, z_warmup = next(data_iter)
         _ = self.train_step(k_warmup, b_warmup, z_warmup)
@@ -1404,38 +1154,20 @@ class RiskyModelDL_FINAL:
             epoch_start_time = time.time()
             self.epoch_var.assign(epoch)
 
-            # Calculate the dynamic decay for this epoch
-            current_decay = self._get_annealed_decay(epoch)
+            # Anneal Polyak decay
+            current_decay = self._linear_anneal(self._polyak_schedule, epoch)
 
-            # Update continuous leak weight for this epoch
-            current_leak = self._get_continuous_leak_weight(epoch)
-            self.continuous_leak_weight.assign(current_leak)
+            # Anneal all scheduled weights and collect for epoch_logs
+            anneal_logs: Dict[str, float] = {"polyak_decay": current_decay}
+            for key, (sched, var) in self._anneal_schedules().items():
+                val = self._linear_anneal(sched, epoch)
+                var.assign(val)
+                anneal_logs[key] = val
 
-            # Update equity FB weight for this epoch
-            current_eq_fb = self._get_equity_fb_weight(epoch)
-            self.equity_fb_weight.assign(current_eq_fb)
-
-            # Update entropy regularization weights for this epoch
-            current_ent_cap = self._get_entropy_capital_weight(epoch)
-            self.entropy_capital_weight.assign(current_ent_cap)
-            current_ent_debt = self._get_entropy_debt_weight(epoch)
-            self.entropy_debt_weight.assign(current_ent_debt)
-            current_ent_def = self._get_entropy_default_weight(epoch)
-            self.entropy_default_weight.assign(current_ent_def)
-
-            # Pass the current_decay to _run_epoch
             epoch_logs = self._run_epoch(data_iter, current_decay)
-            
-            # Log the decay rate to track it
-            epoch_logs['polyak_decay'] = current_decay
-            epoch_logs['continuous_leak_weight'] = current_leak
-            epoch_logs['equity_fb_weight'] = current_eq_fb
-            epoch_logs['entropy_capital_weight'] = current_ent_cap
-            epoch_logs['entropy_debt_weight'] = current_ent_debt
-            epoch_logs['entropy_default_weight'] = current_ent_def
+            epoch_logs.update(anneal_logs)
             epoch_time = time.time() - epoch_start_time
 
-            # --- TensorBoard logging (every epoch) ---
             self._log_tensorboard(epoch, epoch_logs)
 
             if epoch % 10 == 0 or epoch == self.config.epochs - 1:
@@ -1456,50 +1188,42 @@ class RiskyModelDL_FINAL:
 
         self.summary_writer.flush()
 
+    def _anneal_schedules(self) -> Dict[str, Tuple["_AnnealSchedule", tf.Variable]]:
+        """Return all epoch-annealed (schedule, variable) pairs."""
+        return {
+            "equity_fb_weight": (self._eq_fb_schedule, self.equity_fb_weight),
+            "continuous_leak_weight": (
+                self._cont_leak_schedule, self.continuous_leak_weight,
+            ),
+            "entropy_capital_weight": (
+                self._ent_cap_schedule, self.entropy_capital_weight,
+            ),
+            "entropy_debt_weight": (
+                self._ent_debt_schedule, self.entropy_debt_weight,
+            ),
+            "entropy_default_weight": (
+                self._ent_def_schedule, self.entropy_default_weight,
+            ),
+        }
+
     # ------------------------------------------------------------------
-    # TensorBoard logging
+    # Logging
     # ------------------------------------------------------------------
 
     def _get_current_lr(self) -> float:
-        """Return the current learning rate as a Python float."""
-        if isinstance(
-            self.value_optimizer.learning_rate,
-            tf.keras.optimizers.schedules.LearningRateSchedule,
-        ):
-            return float(
-                self.value_optimizer.learning_rate(self.value_optimizer.iterations)
-            )
-        return float(self.value_optimizer.learning_rate)
+        """Return the current critic learning rate."""
+        return self._get_optimizer_lr(self.value_optimizer)
 
     def _get_current_policy_lr(self) -> float:
-        """Return the current policy learning rate as a Python float."""
-        if isinstance(
-            self.policy_optimizer.learning_rate,
-            tf.keras.optimizers.schedules.LearningRateSchedule,
-        ):
-            return float(
-                self.policy_optimizer.learning_rate(
-                    self.policy_optimizer.iterations
-                )
-            )
-        return float(self.policy_optimizer.learning_rate)
+        """Return the current policy learning rate."""
+        return self._get_optimizer_lr(self.policy_optimizer)
 
     def _log_tensorboard(
         self,
         epoch: int,
         epoch_logs: Dict[str, float],
     ) -> None:
-        """Write essential training-health metrics to TensorBoard.
-
-        Metrics are grouped into panels for easy navigation:
-
-        - **loss/** — policy, FB, continuous, default, investment BCE
-        - **policy/** — mean K', B', bond price, dividend
-        - **value/** — mean V, V_cont, RHS target
-        - **decision/** — invest prob/STE, entropy, advantage, default accuracy
-        - **optimizer/** — learning rate, Polyak decay
-        - **weights/** — L2 norms of all networks
-        """
+        """Write per-epoch training metrics to TensorBoard."""
         steps = self.config.steps_per_epoch
         step = epoch
 
@@ -1586,15 +1310,16 @@ class RiskyModelDL_FINAL:
         self,
         epoch: int,
         epoch_logs: Dict[str, float],
-        epoch_time: float = None
+        epoch_time: float = None,
     ) -> None:
+        """Print a formatted summary line for the given epoch."""
         steps = self.config.steps_per_epoch
         progress_val = float(self.training_progress.numpy())
 
         fb_loss = epoch_logs.get('fb_loss', 0) / steps
         policy_loss = epoch_logs.get('policy_loss', 0) / steps
         inv_bce = epoch_logs.get('investment_bce_loss', 0) / steps
-        continues_loss = epoch_logs.get('continuous_loss', 0) / steps
+        continuous_loss = epoch_logs.get('continuous_loss', 0) / steps
         opt_def_rate = epoch_logs.get('optimal_default_rate', 0) / steps
         pred_def_rate = epoch_logs.get('predicted_default_rate', 0) / steps
         avg_v = epoch_logs.get('avg_v_value', 0) / steps
@@ -1633,7 +1358,7 @@ class RiskyModelDL_FINAL:
             f"Pol: {policy_loss:.4e} | "
             f"InvBCE: {inv_bce:.4e} | "
             f"EqFB: {eq_fb:.4e} | "
-            f"ContL: {continues_loss:.4e} | "
+            f"ContL: {continuous_loss:.4e} | "
             f"OptD: {opt_def_rate:.3f} | "
             f"PredD: {pred_def_rate:.3f} | "
             f"InvP: {avg_inv_prob:.2%} | "
@@ -1659,118 +1384,3 @@ class RiskyModelDL_FINAL:
             f"Inv: frac={frac_neg_inv:.2%} -pay={neg_pay_inv:.4f} iss={iss_neg_inv:.4f} │ "
             f"NoInv: frac={frac_neg_noinv:.2%} -pay={neg_pay_noinv:.4f} iss={iss_neg_noinv:.4f}"
         )
-
-    def _get_annealed_decay(self, epoch: int) -> float:
-        """Linearly anneal the Polyak averaging decay over training.
-
-        Starts at ``_polyak_start`` (lower value → faster target updates)
-        and linearly ramps to ``_polyak_end`` (higher value → slower,
-        more stable updates) over ``_polyak_anneal_epochs`` epochs.
-        After the annealing window the decay stays at ``_polyak_end``.
-
-        Args:
-            epoch: Current training epoch (0-indexed).
-
-        Returns:
-            Polyak averaging coefficient for this epoch.
-        """
-        t = min(epoch / max(self._polyak_anneal_epochs, 1), 1.0)
-        return self._polyak_start + t * (self._polyak_end - self._polyak_start)
-
-    def _get_equity_fb_weight(self, epoch: int) -> float:
-        """Linearly anneal the equity FB constraint weight.
-
-        Before ``_eq_fb_epoch_start`` the weight stays at
-        ``_eq_fb_w_start``.  It then linearly ramps to
-        ``_eq_fb_w_end`` by ``_eq_fb_epoch_end``, and holds
-        there for all subsequent epochs.
-
-        Args:
-            epoch: Current training epoch (0-indexed).
-
-        Returns:
-            Equity FB weight for this epoch.
-        """
-        if epoch <= self._eq_fb_epoch_start:
-            return self._eq_fb_w_start
-        if epoch >= self._eq_fb_epoch_end:
-            return self._eq_fb_w_end
-        span = max(self._eq_fb_epoch_end - self._eq_fb_epoch_start, 1)
-        t = (epoch - self._eq_fb_epoch_start) / span
-        return self._eq_fb_w_start + t * (self._eq_fb_w_end - self._eq_fb_w_start)
-
-    def _get_continuous_leak_weight(self, epoch: int) -> float:
-        """Linearly anneal the continuous-net negative-value leak weight.
-
-        Before ``_cont_leak_epoch_start`` the weight stays at
-        ``_cont_leak_w_start``.  It then linearly ramps to
-        ``_cont_leak_w_end`` by ``_cont_leak_epoch_end``, and holds
-        there for all subsequent epochs.
-
-        A weight of 1.0 means negative V_cont passes through unchanged;
-        <1.0 dampens negatives; 0.0 clips them to zero.
-
-        Args:
-            epoch: Current training epoch (0-indexed).
-
-        Returns:
-            Leak weight for this epoch.
-        """
-        if epoch <= self._cont_leak_epoch_start:
-            return self._cont_leak_w_start
-        if epoch >= self._cont_leak_epoch_end:
-            return self._cont_leak_w_end
-        span = max(self._cont_leak_epoch_end - self._cont_leak_epoch_start, 1)
-        t = (epoch - self._cont_leak_epoch_start) / span
-        return self._cont_leak_w_start + t * (self._cont_leak_w_end - self._cont_leak_w_start)
-
-    def _get_entropy_capital_weight(self, epoch: int) -> float:
-        """Linearly anneal the Bernoulli entropy weight for capital policy.
-
-        Args:
-            epoch: Current training epoch (0-indexed).
-
-        Returns:
-            Entropy regularization weight for this epoch.
-        """
-        if epoch <= self._ent_cap_epoch_start:
-            return self._ent_cap_w_start
-        if epoch >= self._ent_cap_epoch_end:
-            return self._ent_cap_w_end
-        span = max(self._ent_cap_epoch_end - self._ent_cap_epoch_start, 1)
-        t = (epoch - self._ent_cap_epoch_start) / span
-        return self._ent_cap_w_start + t * (self._ent_cap_w_end - self._ent_cap_w_start)
-
-    def _get_entropy_debt_weight(self, epoch: int) -> float:
-        """Linearly anneal the Bernoulli entropy weight for debt policy.
-
-        Args:
-            epoch: Current training epoch (0-indexed).
-
-        Returns:
-            Entropy regularization weight for this epoch.
-        """
-        if epoch <= self._ent_debt_epoch_start:
-            return self._ent_debt_w_start
-        if epoch >= self._ent_debt_epoch_end:
-            return self._ent_debt_w_end
-        span = max(self._ent_debt_epoch_end - self._ent_debt_epoch_start, 1)
-        t = (epoch - self._ent_debt_epoch_start) / span
-        return self._ent_debt_w_start + t * (self._ent_debt_w_end - self._ent_debt_w_start)
-
-    def _get_entropy_default_weight(self, epoch: int) -> float:
-        """Linearly anneal the Bernoulli entropy weight for default policy.
-
-        Args:
-            epoch: Current training epoch (0-indexed).
-
-        Returns:
-            Entropy regularization weight for this epoch.
-        """
-        if epoch <= self._ent_def_epoch_start:
-            return self._ent_def_w_start
-        if epoch >= self._ent_def_epoch_end:
-            return self._ent_def_w_end
-        span = max(self._ent_def_epoch_end - self._ent_def_epoch_start, 1)
-        t = (epoch - self._ent_def_epoch_start) / span
-        return self._ent_def_w_start + t * (self._ent_def_w_end - self._ent_def_w_start)

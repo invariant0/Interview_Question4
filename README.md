@@ -122,6 +122,8 @@ train-dl-dist --model risky_final    # Finetune
 
 ## Checkpoints Downloads
 
+model can be retrained, but in order to run simulation comparison with vfi methods, the ground truth folder need to be downloaded first or you will need to rerun the golden vfi finder to train it which takes too much time. 
+
 All checkpoints can be downloaded here. After downloading, place each checkpoint folder and ground truth folder in the project root directory (`econ-dl/`) to run simulation without training.
 
 **Download link:** https://drive.google.com/drive/folders/10f6vb8CBqFftReS5yQlszonI2CTXU6Zo?usp=drive_link

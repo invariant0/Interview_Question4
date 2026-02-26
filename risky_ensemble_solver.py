@@ -328,6 +328,7 @@ def run_parallel_solver(gpu_ids: List[int], jobs: List[Tuple[int, int]]) -> None
 # ═══════════════════════════════════════════════════════════════════════════
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for the ensemble VFI solver."""
     parser = argparse.ArgumentParser(
         description='Solve ensemble VFI configurations across multiple GPUs',
     )
@@ -372,6 +373,7 @@ def detect_gpus() -> List[int]:
 
 
 def main():
+    """Solve ensemble VFI configurations across multiple GPUs."""
     mp.set_start_method('spawn', force=True)
     args = parse_args()
 

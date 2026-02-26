@@ -12,7 +12,11 @@ from econ_models.core.types import TENSORFLOW_DTYPE, Tensor
 
 
 class TransitionFunctions:
-    """Static methods for stochastic transitions."""
+    """Static methods for stochastic state-variable transitions.
+
+    Implement the log-AR(1) transition dynamics used for productivity
+    evolution in the economic models.
+    """
 
     @staticmethod
     def log_ar1_transition(

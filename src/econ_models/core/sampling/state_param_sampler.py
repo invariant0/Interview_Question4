@@ -1,4 +1,4 @@
-# econ_models/core/sampling/state_sampler.py
+# econ_models/core/sampling/state_param_sampler.py
 """
 State variable sampling for deep learning training.
 
@@ -26,7 +26,21 @@ from econ_models.core.types import TENSORFLOW_DTYPE
 tfd = tfp.distributions
 
 class StateParamSampler:
-    """Utilities for sampling economic state variables."""
+    """Sample economic state variables and model parameters jointly.
+
+    Provide two sampling strategies for generating training batches
+    that pair state-space points (k, z, [b]) with economic-parameter
+    combos (rho, std, convex, fixed, [eta0, eta1]):
+
+    * **Independent** (``sample_states_params_gpu``) -- each sample
+      draws states and parameters independently.  Fast but
+      high-variance because each parameter combo sees only a random
+      slice of state space.
+    * **Cross-product** (``sample_states_params_cross_product_gpu``)
+      -- draws *N_s* states and *N_p* parameter combos, then tiles
+      them into an *N_s x N_p* batch so that every parameter sees
+      the full state sample.
+    """
 
     # ------------------------------------------------------------------
     # Cross-product sampling (new)
@@ -147,22 +161,20 @@ class StateParamSampler:
         bonds_config: dict,
         include_debt: bool = False,
     ) -> Tuple[tf.Tensor, ...]:
-        """
-        Generate random samples of state variables (K, Z, [B]).
+        """Generate random samples of state variables and model parameters.
 
-        Sample size increases with progress (curriculum learning).
-        Productivity is sampled to emphasize the full support.
+        Use scaled Beta(1, 1) distributions (equivalent to uniform) for
+        each variable, scaled to the domain specified in *bonds_config*.
 
         Args:
-            batch_size: Maximum samples at full progress.
-            config: Configuration with domain bounds.
-            include_debt: Whether to include debt as a state variable.
-            progress: Curriculum progress in [0, 1].
+            batch_size: Number of samples to generate.
+            bonds_config: Dictionary with sampling bounds for all
+                state and parameter variables.
+            include_debt: Whether to include debt and equity-issuance
+                cost parameters.
 
         Returns:
-            Tuple of tensors with shape (current_batch_size, 1):
-                - Without debt: (K, Z)
-                - With debt: (K, B, Z)
+            Tuple of tensors each with shape ``(batch_size, 1)``.
         """
 
         k_samples = StateParamSampler._sample_capital(

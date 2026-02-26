@@ -258,21 +258,56 @@ def ensure_vfi_solution(
 # =========================================================================
 
 def _safe_nanmean(arr: np.ndarray) -> float:
-    """NaN-safe mean over a flattened array."""
+    """Return the NaN-safe mean over a flattened array.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Input array (any shape).
+
+    Returns
+    -------
+    float
+        Mean of finite elements, or ``0.0`` if none exist.
+    """
     flat = np.asarray(arr).flatten()
     valid = flat[np.isfinite(flat)]
     return float(np.mean(valid)) if len(valid) > 0 else 0.0
 
 
 def _safe_nanstd(arr: np.ndarray) -> float:
-    """NaN-safe standard deviation (ddof=1) over a flattened array."""
+    """Return the NaN-safe sample standard deviation (ddof=1).
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Input array (any shape).
+
+    Returns
+    -------
+    float
+        Standard deviation of finite elements, or ``0.0``.
+    """
     flat = np.asarray(arr).flatten()
     valid = flat[np.isfinite(flat)]
     return float(np.std(valid, ddof=1)) if len(valid) > 1 else 0.0
 
 
 def _safe_fraction(arr: np.ndarray, condition_fn) -> float:
-    """Fraction of finite elements satisfying *condition_fn*."""
+    """Return the fraction of finite elements satisfying *condition_fn*.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Input array (any shape).
+    condition_fn : callable
+        Boolean function applied element-wise to finite values.
+
+    Returns
+    -------
+    float
+        Fraction in ``[0, 1]``, or ``0.0`` if no finite elements.
+    """
     flat = np.asarray(arr).flatten()
     valid = flat[np.isfinite(flat)]
     if len(valid) == 0:
@@ -281,7 +316,18 @@ def _safe_fraction(arr: np.ndarray, condition_fn) -> float:
 
 
 def _safe_corr(x: np.ndarray, y: np.ndarray) -> float:
-    """Pearson correlation between two arrays (NaN-safe)."""
+    """Return the Pearson correlation between two arrays (NaN-safe).
+
+    Parameters
+    ----------
+    x, y : np.ndarray
+        Input arrays (any shape; flattened internally).
+
+    Returns
+    -------
+    float
+        Correlation coefficient clipped to ``[-1, 1]``, or ``0.0``.
+    """
     x_flat = np.asarray(x).flatten()
     y_flat = np.asarray(y).flatten()
     mask = np.isfinite(x_flat) & np.isfinite(y_flat)
@@ -293,7 +339,20 @@ def _safe_corr(x: np.ndarray, y: np.ndarray) -> float:
 
 
 def _safe_autocorr(data_2d: np.ndarray, lag: int = 1) -> float:
-    """Autocorrelation at *lag*, pooled across the batch dimension."""
+    """Return the autocorrelation at *lag*, pooled across the batch dimension.
+
+    Parameters
+    ----------
+    data_2d : np.ndarray
+        Panel array, shape ``(N, T)`` (or 1-D).
+    lag : int, optional
+        Lag order (default 1).
+
+    Returns
+    -------
+    float
+        Pooled autocorrelation, or ``0.0`` if the time dimension is too short.
+    """
     data = np.asarray(data_2d)
     if data.ndim == 1:
         data = data.reshape(1, -1)

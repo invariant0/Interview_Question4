@@ -603,6 +603,7 @@ def detect_gpus() -> List[int]:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for the golden VFI convergence finder."""
     parser = argparse.ArgumentParser(
         description='Golden VFI convergence finder — multi-GPU parallel solver',
     )
@@ -626,6 +627,7 @@ def parse_args() -> argparse.Namespace:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main():
+    """Find golden VFI solutions via multi-GPU parallel convergence search."""
     mp.set_start_method('spawn', force=True)
     args = parse_args()
 

@@ -1154,6 +1154,7 @@ def plot_d_optimal_comparison(J_norm: np.ndarray, selection_result: Dict, save_d
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main():
+    """Run the Jacobian-based identification check for the risky debt model."""
     parser = argparse.ArgumentParser(
         description="Jacobian-based identification check (risky debt model)"
     )

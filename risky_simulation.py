@@ -64,7 +64,7 @@ from risky_common import (
 #  Constants
 # ---------------------------------------------------------------------------
 
-DL_EPOCHS: List[int] = [800]
+DL_EPOCHS: List[int] = [1980]
 # DL_EPOCHS: List[int] = [600, 680, 780, 840]
 """Training epochs at which DL checkpoints are evaluated."""
 
@@ -161,7 +161,7 @@ def plot_stationary_distributions(
     epoch_colors: np.ndarray,
     econ_id: int,
 ) -> plt.Figure:
-    """Create the 5x2 stationary-distribution comparison figure."""
+    """Create the 4x2 stationary-distribution comparison figure."""
     plot_specs = [
         ("Output (Y)", "Y", "output"),
         ("Capital Stock (K)", "K", "capital"),

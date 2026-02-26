@@ -206,12 +206,14 @@ def _safe_fraction(arr: np.ndarray, condition_fn) -> float:
 
 
 def _safe_nanmean(arr: np.ndarray) -> float:
+    """Return the mean of finite elements in *arr*, or 0.0 if none exist."""
     flat = np.asarray(arr).flatten()
     valid = flat[np.isfinite(flat)]
     return float(np.mean(valid)) if len(valid) > 0 else 0.0
 
 
 def _safe_nanstd(arr: np.ndarray) -> float:
+    """Return the sample standard deviation of finite elements in *arr*."""
     flat = np.asarray(arr).flatten()
     valid = flat[np.isfinite(flat)]
     return float(np.std(valid, ddof=1)) if len(valid) > 1 else 0.0
@@ -551,6 +553,7 @@ def make_smm_objective(
     best_eval = {"theta": None, "moments": None, "Q": np.inf}
 
     def objective(theta: np.ndarray) -> float:
+        """Evaluate the SMM quadratic loss at parameter vector *theta*."""
         # Clip to bounds (soft enforcement for Nelder-Mead)
         theta_clipped = np.clip(theta, bounds_lo, bounds_hi)
 
@@ -771,6 +774,7 @@ def compute_smm_jacobian(
     alpha = econ_params_template.capital_share
 
     def _moments_at(theta: np.ndarray) -> np.ndarray:
+        """Return the 6-moment vector evaluated at *theta*."""
         params = dataclasses.replace(
             econ_params_template,
             productivity_persistence=float(theta[0]),

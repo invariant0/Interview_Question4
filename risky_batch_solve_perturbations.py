@@ -445,6 +445,7 @@ def run_parallel_solver(gpu_ids: List[int], jobs: List[Dict]) -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main():
+    """Batch-solve all risky perturbation configurations via multi-GPU parallelism."""
     mp.set_start_method('spawn', force=True)
 
     parser = argparse.ArgumentParser(

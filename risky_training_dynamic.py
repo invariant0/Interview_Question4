@@ -1,3 +1,22 @@
+"""Visualize deep-learning training convergence for the risky debt model.
+
+For a sequence of training epochs this script evaluates three diagnostics:
+
+1. **Bellman residual** — mean absolute Bellman residual on the
+   initial-state batch.
+2. **Value-function error** — mean absolute percentage error between
+   the DL value network and the VFI value function on the VFI grid.
+3. **Lifetime reward** — average discounted lifetime reward compared
+   with the VFI benchmark.
+
+The result is a single three-panel figure saved to
+``results/effectiveness_risky/risky_training_dynamics.png``.
+
+Usage::
+
+    python risky_training_dynamic.py
+"""
+
 import os
 import numpy as np
 import tensorflow as tf

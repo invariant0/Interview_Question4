@@ -44,8 +44,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # ── GPU must be configured BEFORE importing TensorFlow ─────────────────
 def _configure_gpu_before_import() -> int:
-    """Parse --gpu from sys.argv and set CUDA_VISIBLE_DEVICES
-    before TensorFlow is imported (TF locks GPU list at import time)."""
+    """Parse ``--gpu`` from sys.argv and set ``CUDA_VISIBLE_DEVICES``.
+
+    Must be called before TensorFlow is imported, since TF locks the
+    GPU list at import time.
+    """
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--gpu", type=int, default=0)
     known, _ = parser.parse_known_args()
@@ -178,7 +181,7 @@ ECON_PARAMS_FILE_DIST: str = os.path.join(
 # =========================================================================
 
 def _safe_corr(x: np.ndarray, y: np.ndarray) -> float:
-    """Pearson correlation (NaN-safe)."""
+    """Return the Pearson correlation between two arrays, handling NaN values."""
     x_flat = np.asarray(x).flatten()
     y_flat = np.asarray(y).flatten()
     mask = np.isfinite(x_flat) & np.isfinite(y_flat)
@@ -344,7 +347,7 @@ def fit_moment_mvn_prior(
 # =========================================================================
 
 def _golden_vfi_path() -> str:
-    """Canonical path for the golden VFI solution at TRUE_PARAMS."""
+    """Return the canonical path for the golden VFI solution at TRUE_PARAMS."""
     p = TRUE_PARAMS
     return (
         f"./ground_truth_basic/golden_vfi_results_"

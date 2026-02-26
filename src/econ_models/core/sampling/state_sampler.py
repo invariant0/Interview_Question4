@@ -17,7 +17,12 @@ tfd = tfp.distributions
 
 
 class StateSampler:
-    """Utilities for sampling economic state variables."""
+    """Sample economic state variables for neural network training.
+
+    Provide CPU (Beta-distribution-based) and GPU (XLA-compatible
+    uniform) sampling strategies for capital, productivity, and
+    optionally debt state variables.
+    """
 
     @staticmethod
     def sample_states(
@@ -25,20 +30,19 @@ class StateSampler:
         bonds_config: dict,
         include_debt: bool = False,
     ) -> Tuple[tf.Tensor, ...]:
-        """
-        Generate random samples of state variables (K, Z, [B]).
+        """Generate random samples of state variables (K, Z, [B]).
 
-        Sample size increases with progress (curriculum learning).
-        Productivity is sampled to emphasize the full support.
+        Use scaled Beta(1, 1) distributions (equivalent to uniform)
+        for each variable, scaled to the domain bounds in *bonds_config*.
 
         Args:
-            batch_size: Maximum samples at full progress.
-            config: Configuration with domain bounds.
+            batch_size: Number of samples to generate.
+            bonds_config: Dictionary with sampling bounds (k_min,
+                k_max, z_min, z_max, and optionally b_min, b_max).
             include_debt: Whether to include debt as a state variable.
-            progress: Curriculum progress in [0, 1].
 
         Returns:
-            Tuple of tensors with shape (current_batch_size, 1):
+            Tuple of tensors each with shape ``(batch_size, 1)``:
                 - Without debt: (K, Z)
                 - With debt: (K, B, Z)
         """

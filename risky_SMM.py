@@ -209,7 +209,7 @@ DF_OVERID: int = K_MOMENTS - P_PARAMS  # = 3
 
 
 def _safe_corr(x: np.ndarray, y: np.ndarray) -> float:
-    """Pearson correlation (NaN-safe)."""
+    """Return the Pearson correlation between two arrays, handling NaN values."""
     x_flat = np.asarray(x).flatten()
     y_flat = np.asarray(y).flatten()
     mask = np.isfinite(x_flat) & np.isfinite(y_flat)
@@ -230,18 +230,21 @@ def _safe_fraction(arr: np.ndarray, condition_fn) -> float:
 
 
 def _safe_nanmean(arr: np.ndarray) -> float:
+    """Return the mean of finite elements in *arr*, or 0.0 if none exist."""
     flat = np.asarray(arr).flatten()
     valid = flat[np.isfinite(flat)]
     return float(np.mean(valid)) if len(valid) > 0 else 0.0
 
 
 def _safe_nanstd(arr: np.ndarray) -> float:
+    """Return the sample standard deviation of finite elements, or 0.0."""
     flat = np.asarray(arr).flatten()
     valid = flat[np.isfinite(flat)]
     return float(np.std(valid, ddof=1)) if len(valid) > 1 else 0.0
 
 
 def _safe_nanmedian(arr: np.ndarray) -> float:
+    """Return the median of finite elements in *arr*, or 0.0 if none exist."""
     flat = np.asarray(arr).flatten()
     valid = flat[np.isfinite(flat)]
     return float(np.median(valid)) if len(valid) > 0 else 0.0
@@ -458,7 +461,7 @@ def compute_golden_moments(
 ) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
     """Compute golden moments via VFI simulation on the data panel.
 
-    Returns both the 8-element moment vector AND the stationary simulation
+    Returns both the 9-element moment vector AND the stationary simulation
     results (needed for bootstrap weighting matrix).
 
     If *vfi_solution* is provided (pre-loaded), disk I/O is skipped.
@@ -698,6 +701,7 @@ def make_smm_objective(
     best_eval = {"theta": None, "moments": None, "Q": np.inf}
 
     def objective(theta: np.ndarray) -> float:
+        """Evaluate the SMM criterion at candidate parameter vector *theta*."""
         # Clip to bounds (soft enforcement for Nelder-Mead)
         theta_clipped = np.clip(theta, bounds_lo, bounds_hi)
 
