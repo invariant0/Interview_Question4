@@ -249,8 +249,8 @@ class RiskyModelDL_FINAL:
         self.target_default_policy_net.set_weights(
             self.default_policy_net.get_weights()
         )
-        # self.capital_policy_net.load_weights(str(weight_paths["capital"]))
-        # self.debt_policy_net.load_weights(str(weight_paths["debt"]))
+        self.capital_policy_net.load_weights(str(weight_paths["capital"]))
+        self.debt_policy_net.load_weights(str(weight_paths["debt"]))
 
         print(f"[pretrained] Loaded from {ckpt_dir} (epoch {epoch}), targets synced.")
 
@@ -301,28 +301,33 @@ class RiskyModelDL_FINAL:
 
         # --- Epoch-scheduled annealing parameters ---
         # Each schedule is a tuple: (w_start, w_end, epoch_start, epoch_end)
-        def _sched(base_name: str, default_val: float):
+        def _sched(w_start_attr, w_end_attr, ep_start_attr, ep_end_attr, w_default):
             """Read annealing schedule from config with defaults."""
-            w_s = getattr(self.config, f"{base_name}_weight_start", None)
-            w_e = getattr(self.config, f"{base_name}_weight_end", None)
+            w_s = getattr(self.config, w_start_attr, None)
+            w_e = getattr(self.config, w_end_attr, None)
             return (
-                w_s if w_s is not None else default_val,
-                w_e if w_e is not None else default_val,
-                getattr(self.config, f"{base_name}_start_epoch", None) or 0,
-                getattr(self.config, f"{base_name}_end_epoch", None) or 1,
+                w_s if w_s is not None else w_default,
+                w_e if w_e is not None else w_default,
+                getattr(self.config, ep_start_attr, None) or 0,
+                getattr(self.config, ep_end_attr, None) or 1,
             )
 
-        _eq_fb_w = (
-            self.config.equity_fb_weight
-            if self.config.equity_fb_weight is not None
-            else 1.0
-        )
-
-        self._sched_eq_fb = _sched('equity_fb', _eq_fb_w)
-        self._sched_cont_leak = _sched('continuous_leak', 1.0)
-        self._sched_ent_cap = _sched('entropy_capital', 0.0)
-        self._sched_ent_debt = _sched('entropy_debt', 0.0)
-        self._sched_ent_def = _sched('entropy_default', 0.0)
+        _eq_fb_w = self.config.equity_fb_weight if self.config.equity_fb_weight is not None else 1.0
+        self._sched_eq_fb = _sched(
+            'equity_fb_weight_start', 'equity_fb_weight_end',
+            'equity_fb_start_epoch', 'equity_fb_end_epoch', _eq_fb_w)
+        self._sched_cont_leak = _sched(
+            'continuous_leak_weight_start', 'continuous_leak_weight_end',
+            'continuous_leak_start_epoch', 'continuous_leak_end_epoch', 1.0)
+        self._sched_ent_cap = _sched(
+            'entropy_capital_weight_start', 'entropy_capital_weight_end',
+            'entropy_capital_start_epoch', 'entropy_capital_end_epoch', 0.0)
+        self._sched_ent_debt = _sched(
+            'entropy_debt_weight_start', 'entropy_debt_weight_end',
+            'entropy_debt_start_epoch', 'entropy_debt_end_epoch', 0.0)
+        self._sched_ent_def = _sched(
+            'entropy_default_weight_start', 'entropy_default_weight_end',
+            'entropy_default_start_epoch', 'entropy_default_end_epoch', 0.0)
 
         # tf.Variables so XLA-compiled _train_step_impl sees updates each epoch
         self.equity_fb_weight = tf.Variable(
@@ -541,19 +546,27 @@ class RiskyModelDL_FINAL:
             decay: Averaging coefficient in ``[0, 1]``.  Higher values
                 retain more of the existing target network.
         """
-        pairs = [
-            (self.target_value_net, self.value_net),
-            (self.target_continuous_net, self.continuous_net),
-            (self.target_default_policy_net, self.default_policy_net),
-        ]
-        for target_net, source_net in pairs:
-            for target_var, source_var in zip(
-                target_net.trainable_variables,
-                source_net.trainable_variables,
-            ):
-                target_var.assign(
-                    decay * target_var + (1.0 - decay) * source_var
-                )
+        for target_var, source_var in zip(
+            self.target_value_net.trainable_variables,
+            self.value_net.trainable_variables,
+        ):
+            target_var.assign(
+                decay * target_var + (1.0 - decay) * source_var
+            )
+        for target_var, source_var in zip(
+            self.target_continuous_net.trainable_variables,
+            self.continuous_net.trainable_variables,
+        ):
+            target_var.assign(
+                decay * target_var + (1.0 - decay) * source_var
+            )
+        for target_var, source_var in zip(
+            self.target_default_policy_net.trainable_variables,
+            self.default_policy_net.trainable_variables,
+        ):
+            target_var.assign(
+                decay * target_var + (1.0 - decay) * source_var
+            )
 
     def _build_summary_writer(self) -> None:
         """Create TensorBoard summary writer.
@@ -806,55 +819,6 @@ class RiskyModelDL_FINAL:
     # Dividend Computation
     # =========================================================================
 
-    def _compute_dividend_common(
-        self,
-        k: tf.Tensor,
-        b: tf.Tensor,
-        z: tf.Tensor,
-        b_prime: tf.Tensor,
-        q: tf.Tensor,
-        equity_issuance: tf.Tensor,
-        issuance_gate_prob: tf.Tensor,
-        eta0: tf.Tensor,
-        eta1: tf.Tensor,
-        investment: tf.Tensor = None,
-        adj_cost: tf.Tensor = None,
-    ) -> Tuple[tf.Tensor, tf.Tensor]:
-        """Compute dividend and raw payout using shared logic.
-
-        Args:
-            k: Current capital.
-            b: Current debt.
-            z: Current productivity.
-            b_prime: Next period debt.
-            q: Bond price.
-            equity_issuance: Effective equity issuance.
-            issuance_gate_prob: Gate probability.
-            eta0: Issuance cost parameter.
-            eta1: Issuance cost parameter.
-            investment: Investment amount (optional, defaults to 0).
-            adj_cost: Adjustment cost (optional, defaults to 0).
-
-        Returns:
-            Tuple of (dividend, payout).
-        """
-        if investment is None:
-            investment = tf.zeros_like(k)
-        if adj_cost is None:
-            adj_cost = tf.zeros_like(k)
-
-        revenue = self.one_minus_tax * ProductionFunctions.cobb_douglas(
-            k, z, self.params
-        )
-        debt_inflow, tax_shield = DebtFlowCalculator.calculate(
-            b_prime, q, self.params
-        )
-
-        payout = revenue + debt_inflow + tax_shield - adj_cost - investment - b
-        issuance_cost = issuance_gate_prob * (eta0 + eta1 * equity_issuance)
-        dividend = payout - issuance_cost
-        return dividend, payout
-
     def _compute_dividend(
         self,
         k: tf.Tensor,
@@ -872,33 +836,38 @@ class RiskyModelDL_FINAL:
     ) -> Tuple[tf.Tensor, tf.Tensor]:
         """Compute dividend (cash flow) for the risky model (invest branch).
 
+        Issuance cost uses the learned gate probability instead of the
+        hard indicator: ``gate_prob * (eta0 + eta1 * e)``.
+
         Args:
-            k: Current capital.
-            b: Current debt.
-            z: Productivity shock.
-            k_prime: Next period capital.
-            b_prime: Next period debt.
-            q: Bond price.
             equity_issuance: Effective equity issuance (raw * gate_prob).
             issuance_gate_prob: Issuance gate probability ∈ [0, 1].
-            convex: Per-sample adjustment cost parameter.
-            fixed: Per-sample adjustment cost parameter.
-            eta0: Per-sample issuance cost parameter.
-            eta1: Per-sample issuance cost parameter.
+            convex, fixed: Per-sample adjustment cost parameters.
+            eta0, eta1: Per-sample issuance cost parameters.
 
         Returns:
-            Tuple of (dividend, payout).
+            (dividend, payout) — *payout* is the raw operating payout
+            **before** equity issuance and its cost.  Both shape ``(batch, 1)``.
         """
-        investment = ProductionFunctions.calculate_investment(
-            k, k_prime, self.params
-        )
+        # Production: (1-tau) * Z * K^theta
+        revenue = self.one_minus_tax * ProductionFunctions.cobb_douglas(k, z, self.params)
+
+        # Investment: I = K' - (1-delta)*K
+        investment = ProductionFunctions.calculate_investment(k, k_prime, self.params)
+
+        # Adjustment cost (dist version: takes convex/fixed as tensors)
         adj_cost, _ = AdjustmentCostCalculator.calculate_dist(
             investment, k, convex, fixed,
         )
-        return self._compute_dividend_common(
-            k, b, z, b_prime, q, equity_issuance, issuance_gate_prob,
-            eta0, eta1, investment, adj_cost
-        )
+
+        # Debt flow
+        debt_inflow, tax_shield = DebtFlowCalculator.calculate(b_prime, q, self.params)
+
+        # Raw payout before equity issuance
+        payout = revenue + debt_inflow + tax_shield - adj_cost - investment - b
+        issuance_cost = issuance_gate_prob * (eta0 + eta1 * equity_issuance)
+        dividend = payout - issuance_cost
+        return dividend, payout
 
     def _compute_dividend_no_invest(
         self,
@@ -912,54 +881,36 @@ class RiskyModelDL_FINAL:
         eta0: tf.Tensor,
         eta1: tf.Tensor,
     ) -> Tuple[tf.Tensor, tf.Tensor]:
-        """Compute dividend when NOT investing.
+        """Compute dividend when NOT investing (no adjustment cost, no investment).
+        k' = (1-delta)*k, investment = 0.
+
+        Issuance cost uses the learned gate probability instead of the
+        hard indicator: ``gate_prob * (eta0 + eta1 * e)``.
 
         Args:
-           k: Current capital.
-           b: Current debt.
-           z: Productivity shock.
-           b_prime: Next period debt.
-           q: Bond price.
-           equity_issuance: Effective equity issuance.
-           issuance_gate_prob: Issuance gate probability.
-           eta0: Issuance cost parameter.
-           eta1: Issuance cost parameter.
+            equity_issuance: Effective equity issuance (raw * gate_prob).
+            issuance_gate_prob: Issuance gate probability ∈ [0, 1].
+            eta0, eta1: Per-sample issuance cost parameters.
 
         Returns:
-            Tuple of (dividend, payout).
+            (dividend, payout) — *payout* is the raw operating payout
+            **before** equity issuance and its cost.  Both shape ``(batch, 1)``.
         """
-        return self._compute_dividend_common(
-            k, b, z, b_prime, q, equity_issuance, issuance_gate_prob,
-            eta0, eta1
-        )
+        # Production: (1-tau) * Z * K^theta
+        revenue = self.one_minus_tax * ProductionFunctions.cobb_douglas(k, z, self.params)
+
+        # Debt flow
+        debt_inflow, tax_shield = DebtFlowCalculator.calculate(b_prime, q, self.params)
+
+        # Raw payout (no investment, no adjustment cost)
+        payout = revenue + debt_inflow + tax_shield - b
+        issuance_cost = issuance_gate_prob * (eta0 + eta1 * equity_issuance)
+        dividend = payout - issuance_cost
+        return dividend, payout
 
     # =========================================================================
     # Training Step
     # =========================================================================
-
-
-    def _compute_equity_issuance_outputs(
-        self,
-        network: tf.keras.Model,
-        inputs: tf.Tensor,
-        training: bool = False,
-    ) -> Tuple[tf.Tensor, tf.Tensor]:
-        """Compute equity issuance values and gate probabilities.
-
-        Args:
-            network: Equity issuance network model.
-            inputs: Network inputs.
-            training: Training flag.
-
-        Returns:
-            Tuple of (equity_issuance, issuance_gate_prob).
-        """
-        logits = network(inputs, training=training)
-        equity_issuance = tf.nn.relu(logits)
-        gate_soft = tf.math.sigmoid(logits)
-        gate_hard = tf.cast(gate_soft > self.half, TENSORFLOW_DTYPE)
-        gate_prob = gate_soft + tf.stop_gradient(gate_hard - gate_soft)
-        return equity_issuance, gate_prob
 
     def _train_step_impl(
         self,
@@ -1025,16 +976,17 @@ class RiskyModelDL_FINAL:
         )
 
         # Equity issuance for label computation (frozen, per-path, STE gate)
-        equity_issuance_inf_invest, issuance_gate_prob_inf_invest = (
-            self._compute_equity_issuance_outputs(
-                self.equity_issuance_net_invest, inputs, training=False
-            )
-        )
-        equity_issuance_inf_noinvest, issuance_gate_prob_inf_noinvest = (
-            self._compute_equity_issuance_outputs(
-                self.equity_issuance_net_noinvest, inputs, training=False
-            )
-        )
+        issuance_logit_inf_invest = self.equity_issuance_net_invest(inputs, training=False)
+        equity_issuance_inf_invest = tf.nn.relu(issuance_logit_inf_invest)
+        issuance_gate_soft_inf_invest = tf.math.sigmoid(issuance_logit_inf_invest)
+        issuance_gate_hard_inf_invest = tf.cast(issuance_gate_soft_inf_invest > self.half, TENSORFLOW_DTYPE)
+        issuance_gate_prob_inf_invest = issuance_gate_soft_inf_invest + tf.stop_gradient(issuance_gate_hard_inf_invest - issuance_gate_soft_inf_invest)
+
+        issuance_logit_inf_noinvest = self.equity_issuance_net_noinvest(inputs, training=False)
+        equity_issuance_inf_noinvest = tf.nn.relu(issuance_logit_inf_noinvest)
+        issuance_gate_soft_inf_noinvest = tf.math.sigmoid(issuance_logit_inf_noinvest)
+        issuance_gate_hard_inf_noinvest = tf.cast(issuance_gate_soft_inf_noinvest > self.half, TENSORFLOW_DTYPE)
+        issuance_gate_prob_inf_noinvest = issuance_gate_soft_inf_noinvest + tf.stop_gradient(issuance_gate_hard_inf_noinvest - issuance_gate_soft_inf_noinvest)
 
         # Bond prices (expensive MC — computed ONCE, shared debt)
         q_invest = self.estimate_bond_price(
@@ -1141,17 +1093,19 @@ class RiskyModelDL_FINAL:
             b_sigmoid = self.debt_policy_net(inputs, training=True)
             b_prime = self.normalizer_states.denormalize_debt(b_sigmoid)
 
-            # Equity issuance
-            equity_issuance_invest, issuance_gate_prob_invest = (
-                self._compute_equity_issuance_outputs(
-                    self.equity_issuance_net_invest, inputs, training=True
-                )
-            )
-            equity_issuance_noinvest, issuance_gate_prob_noinvest = (
-                self._compute_equity_issuance_outputs(
-                    self.equity_issuance_net_noinvest, inputs, training=True
-                )
-            )
+            # Equity issuance (invest path, live, gated, STE)
+            issuance_logit_invest = self.equity_issuance_net_invest(inputs, training=True)
+            equity_issuance_invest = tf.nn.relu(issuance_logit_invest)
+            issuance_gate_soft_invest = tf.math.sigmoid(issuance_logit_invest)
+            issuance_gate_hard_invest = tf.cast(issuance_gate_soft_invest > self.half, TENSORFLOW_DTYPE)
+            issuance_gate_prob_invest = issuance_gate_soft_invest + tf.stop_gradient(issuance_gate_hard_invest - issuance_gate_soft_invest)
+
+            # Equity issuance (no-invest path, live, gated, STE)
+            issuance_logit_noinvest = self.equity_issuance_net_noinvest(inputs, training=True)
+            equity_issuance_noinvest = tf.nn.relu(issuance_logit_noinvest)
+            issuance_gate_soft_noinvest = tf.math.sigmoid(issuance_logit_noinvest)
+            issuance_gate_hard_noinvest = tf.cast(issuance_gate_soft_noinvest > self.half, TENSORFLOW_DTYPE)
+            issuance_gate_prob_noinvest = issuance_gate_soft_noinvest + tf.stop_gradient(issuance_gate_hard_noinvest - issuance_gate_soft_noinvest)
 
             # --- Invest path value objective ---
             q_invest_live = self.estimate_bond_price(
@@ -1504,24 +1458,28 @@ class RiskyModelDL_FINAL:
             current_decay = self._get_annealed_decay(epoch)
 
             # Update scheduled weights for this epoch
-            scheduled_vars = [
-                ("continuous_leak_weight", self.continuous_leak_weight, self._sched_cont_leak),
-                ("equity_fb_weight", self.equity_fb_weight, self._sched_eq_fb),
-                ("entropy_capital_weight", self.entropy_capital_weight, self._sched_ent_cap),
-                ("entropy_debt_weight", self.entropy_debt_weight, self._sched_ent_debt),
-                ("entropy_default_weight", self.entropy_default_weight, self._sched_ent_def),
-            ]
+            current_leak = self._linear_anneal(epoch, self._sched_cont_leak)
+            current_eq_fb = self._linear_anneal(epoch, self._sched_eq_fb)
+            current_ent_cap = self._linear_anneal(epoch, self._sched_ent_cap)
+            current_ent_debt = self._linear_anneal(epoch, self._sched_ent_debt)
+            current_ent_def = self._linear_anneal(epoch, self._sched_ent_def)
 
-            current_log_updates = {}
-            for name, var, schedule in scheduled_vars:
-                val = self._linear_anneal(epoch, schedule)
-                var.assign(val)
-                current_log_updates[name] = val
+            self.continuous_leak_weight.assign(current_leak)
+            self.equity_fb_weight.assign(current_eq_fb)
+            self.entropy_capital_weight.assign(current_ent_cap)
+            self.entropy_debt_weight.assign(current_ent_debt)
+            self.entropy_default_weight.assign(current_ent_def)
 
             # Pass the current_decay to _run_epoch
             epoch_logs = self._run_epoch(data_iter, current_decay)
+
+            # Log the decay rate to track it
             epoch_logs['polyak_decay'] = current_decay
-            epoch_logs.update(current_log_updates)
+            epoch_logs['continuous_leak_weight'] = current_leak
+            epoch_logs['equity_fb_weight'] = current_eq_fb
+            epoch_logs['entropy_capital_weight'] = current_ent_cap
+            epoch_logs['entropy_debt_weight'] = current_ent_debt
+            epoch_logs['entropy_default_weight'] = current_ent_def
             epoch_time = time.time() - epoch_start_time
 
             # TensorBoard logging (every epoch)
