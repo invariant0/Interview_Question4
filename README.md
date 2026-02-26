@@ -251,6 +251,17 @@ for basic model we also implement its MCMC version, it will first load the check
 step 1: moment prior generation
 step 2: fit the saved prior sample to multi-variable normal distribution and using posterial distribution conditioned on the bencmark the moments to aceept and reject samples according to the likelihood ratio
 
+prior moments sample generation, saved cach result to results/smm_mcmc_basic folder
+```
+python basic_SMM_mcmc_prior.py --n-prior-samples 200 --gpu 0 
+```
+load saved cach result and construct posterior distribution for MCMC inference
+
+```
+python basic_SMM_mcmc_posterior.py \\
+        --prior-cache ./results/smm_mcmc_basic/prior_cache.npz
+```
+
 ## Testing
 
 The project uses **pytest** for testing. All tests run on CPU (no GPU required). All test dependencies are included in the main install:
