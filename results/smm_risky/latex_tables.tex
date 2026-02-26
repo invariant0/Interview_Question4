@@ -1,0 +1,72 @@
+% Auto-generated LaTeX tables — risky debt model SMM
+% Reconstructed from log output by reconstruct_results.py
+
+% MC Design
+\begin{table}[htbp]
+\centering
+\caption{Monte Carlo Experimental Design --- Risky Debt Model}
+\label{tab:smm_risky_mc_design}
+\begin{tabular}{lc}
+\toprule
+Setting & Value \\
+\midrule
+$N_{\text{data}}$ (firms) & 3000 \\
+$T_{\text{data}}$ (periods) & 200 \\
+$N_{\text{sim}}$ (firms) & 5000 \\
+$T_{\text{sim}}$ (periods) & 500 \\
+Burn-in & 200 \\
+$J$ (sim/data ratio) & 4.17 \\
+Bootstrap resamples ($B$) & 500 \\
+CMA-ES starts & 10 \\
+MC replications ($R$) & 1 \\
+Mean wall time per run (s) & 10685.0 \\
+Mean function evaluations & 2660 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Parameter Recovery
+\begin{table}[htbp]
+\centering
+\caption{SMM Parameter Recovery --- Risky Debt Model}
+\label{tab:smm_risky_recovery}
+\begin{tabular}{lcccccc}
+\toprule
+Parameter & True & Median $\hat{\theta}$ & SE & Bias (\%) & RMSE (\%) & Coverage (95\%) \\
+\midrule
+$ρ$ & 0.6000 & 0.6859 & 0.0000 & +14.32 & 14.32 & 0.0\% \\
+$σ$ & 0.1700 & 0.1478 & 0.0000 & -13.06 & 13.06 & 0.0\% \\
+$ξ$ & 1.0000 & 1.7640 & 0.0000 & +76.40 & 76.40 & 0.0\% \\
+$F$ & 0.0200 & 0.0100 & 0.0000 & -50.00 & 50.00 & 0.0\% \\
+$η₀$ & 0.0800 & 0.0808 & 0.0000 & +1.00 & 1.00 & 0.0\% \\
+$η₁$ & 0.1000 & 0.0209 & 0.0000 & -79.10 & 79.10 & 0.0\% \\
+\midrule
+\multicolumn{7}{l}{J-test rejection rate (5\%): 100.0\%} \\
+\multicolumn{7}{l}{MC replications: 1} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Moment Fit
+\begin{table}[htbp]
+\centering
+\caption{Moment Fit at $\hat{\theta}$ --- Risky Debt Model}
+\label{tab:smm_risky_moment_fit}
+\begin{tabular}{lcccc}
+\toprule
+Moment & Data & Model & $|$Error$|$ & $t$-stat \\
+\midrule
+AC[I/K] & 0.088524 & 0.220215 & 0.131691 & 101.584 \\
+Skew[I/K] & -0.793202 & -0.827699 & 0.034497 & -28.949 \\
+SD[Y/K] & 0.087580 & 0.097838 & 0.010258 & 78.609 \\
+Corr(I/K,lagY/K) & 0.089094 & 0.233249 & 0.144155 & 136.280 \\
+P(equity iss.) & 0.117849 & 0.333769 & 0.215920 & 286.707 \\
+E[|e|/K|e<0] & 0.107344 & 0.096427 & 0.010917 & -28.340 \\
+E[D/K|D>0] & 0.117677 & 0.171371 & 0.053694 & 278.420 \\
+Corr(ΔB/K,Y/K) & -0.268319 & -0.195770 & 0.072549 & 57.484 \\
+Median[B/K] & 5.268500 & 5.308027 & 0.039528 & 11.543 \\
+\midrule
+\multicolumn{5}{l}{J-statistic: 194661919354.8387 (p = 0.0000)} \\
+\bottomrule
+\end{tabular}
+\end{table}

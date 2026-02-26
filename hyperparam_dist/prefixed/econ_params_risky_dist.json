@@ -1,0 +1,43 @@
+{
+    "discount_factor": 0.96,
+    "capital_share": 0.6,
+    "depreciation_rate": 0.15,
+    "risk_free_rate": 0.04,
+    "default_cost_proportional": 0.3,
+    "corporate_tax_rate": 0.2,
+    "collateral_recovery_fraction": 0.5,
+
+    "productivity_persistence": 0.0,
+    "productivity_std_dev": 0.0,
+    "adjustment_cost_convex": 0.0,
+    "adjustment_cost_fixed": 0.0,
+    "equity_issuance_cost_fixed": 0.0,
+    "equity_issuance_cost_linear": 0.0,
+    
+    "estimate_param":{
+        "productivity_persistence": {
+            "min": 0.40,
+            "max": 0.80
+        },
+        "productivity_std_dev": {
+            "min": 0.05,
+            "max": 0.30
+        },
+        "adjustment_cost_convex": {
+            "min": 0.01,
+            "max": 2.00
+        },
+        "adjustment_cost_fixed": {
+            "min": 0.01,
+            "max": 0.05
+        },
+        "equity_issuance_cost_fixed": {
+            "min": 0.01,
+            "max": 0.20
+        },
+        "equity_issuance_cost_linear": {
+            "min": 0.01,
+            "max": 0.2
+        }
+    }
+}

@@ -1,0 +1,108 @@
+{
+    "basic": {
+        "batch_size": 10000,
+        "learning_rate": 0.001,
+        "lr_decay_rate": 1.0,
+        "lr_decay_steps": 500,
+        "lr_policy_scale": 1.0,
+        "epochs": 10000,
+        "steps_per_epoch": 100,
+        "hidden_layers": [64, 64],
+        "activation_function": "tanh",
+        "use_layer_norm": false,
+        "euler_residual_weight": 10000.0,
+        "polyak_averaging_decay": 0.95
+    },
+    "basic_final": {
+        "batch_size": 10000,
+        "learning_rate": 0.002,
+        "lr_decay_rate": 0.99,
+        "lr_decay_steps": 100,
+        "lr_policy_scale": 1.0,
+        "epochs": 501,
+        "steps_per_epoch": 100,
+        "hidden_layers": [64, 64],
+        "polyak_averaging_decay": 0.99,
+        "polyak_decay_end": 0.9999,
+        "polyak_decay_epochs": 500,
+        "target_update_freq": 10,
+        "gradient_clip_norm": 10000.0,
+        "activation_function": "tanh",
+        "use_layer_norm": false,
+        "euler_residual_weight": 10000.0
+    },
+    "risk_free": {
+        "batch_size": 2000,
+        "learning_rate": 0.0005,
+        "lr_decay_rate": 1.0,
+        "lr_decay_steps": 200,
+        "lr_policy_scale": 0.5,
+        "epochs": 500,
+        "steps_per_epoch": 100,
+        "hidden_layers": [128, 128],
+        "activation_function": "tanh",
+        "mc_sample_number_bond_priceing": 50,
+        "polyak_averaging_decay": 0.95,
+        "polyak_decay_end": 0.999,
+        "target_update_freq": 5,
+        "polyak_decay_epochs": 500,
+        "gradient_clip_norm": 10.0,
+        "min_q_price": 1e-4,
+        "epsilon_debt": 1e-4,
+        "epsilon_value_default": 1e-4
+    },
+    "risky_final": {
+        "batch_size": 2000,
+        "learning_rate": 0.001,    
+        "policy_warmup_epochs": 100,     
+        "lr_decay_rate": 0.01,          
+        "lr_decay_steps": 1000,
+        "lr_policy_scale": 1.0,          
+        "epochs": 2001,                  
+        "steps_per_epoch": 100,
+
+
+        "polyak_averaging_decay": 0.99,
+        "polyak_decay_end": 0.999,
+        "polyak_decay_epochs": 2001,
+        "policy_change_scale": 10.0,
+        "target_update_freq": 10,        
+
+
+        "equity_fb_weight": 10,
+        "equity_fb_weight_start": 20,
+        "equity_fb_weight_end": 20,
+        "equity_fb_start_epoch": 0,
+        "equity_fb_end_epoch": 2000,
+
+        
+        "continuous_leak_weight_start": 1.0,
+        "continuous_leak_weight_end": 0.1,
+        "continuous_leak_start_epoch": 0,
+        "continuous_leak_end_epoch": 200,
+
+        "entropy_capital_weight_start": 0.0,
+        "entropy_capital_weight_end": 0.0,
+        "entropy_capital_start_epoch": 0,
+        "entropy_capital_end_epoch": 500,
+
+        "entropy_debt_weight_start": 0.0,
+        "entropy_debt_weight_end": 0.0,
+        "entropy_debt_start_epoch": 0,
+        "entropy_debt_end_epoch": 100,
+
+        "entropy_default_weight_start": 0.0,
+        "entropy_default_weight_end": 0.0,
+        "entropy_default_start_epoch": 0,
+        "entropy_default_end_epoch": 200,
+
+
+        "hidden_layers": [128, 128],
+        "activation_function": "tanh",
+        "mc_sample_number_bond_priceing": 100,
+        "gradient_clip_norm": 10000.0,     
+        "min_q_price": 1e-4,
+        "epsilon_debt": 1e-4,
+        "epsilon_value_default": 1e-4
+    }
+}

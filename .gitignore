@@ -1,0 +1,72 @@
+# Large folders - exclude from git
+# checkpoints/
+tf/
+build/
+archive/
+
+# Cache and temporary files
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Generated results (optional - include if you want to share results)
+# result_effectiveness_dl_basic/
+# result_effectiveness_dl_risky/
+
+# Ground truth files (large numpy files)
+ground_truth_560/*.npz
+ground_truth/*.npz
+ground_truth_basic/*.npz
+ground_truth_risky/*.npz
+
+# Auto-generated boundaries (keep the folder structure)
+# hyperparam/autogen/*.json
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Virtual environments
+venv/
+env/
+.env/
+
+# Egg files
+*.egg-info/
+*.egg
+dist/
+
+# Logs
+*.log
+logs/
+docs/
+# TensorFlow/Keras specific
+# *.h5
+# *.weights.h5
+*.keras
+saved_model/
+
+# Ignore ground_truth folders
+ground_truth/
+ground_truth_basic/
+ground_truth_risky/
+checkpoints/
+checkpoints_dist/
+checkpoints_final/
+checkpoints_final_dist/
+checkpoints_pretrain/
+checkpoints_pretrain_dist/
+checkpoints_hp_grid/

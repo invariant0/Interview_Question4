@@ -1,0 +1,15 @@
+{
+    "discount_factor": 0.96,
+    "capital_share": 0.7,
+    "depreciation_rate": 0.15,
+    "risk_free_rate": 0.04,
+    "equity_issuance_cost_fixed": 0.0,
+    "equity_issuance_cost_linear": 0.0,
+    "default_cost_proportional": 0.0,
+    "corporate_tax_rate": 0.0,
+    "collateral_recovery_fraction": 0.0,
+    "productivity_persistence": 0.6,
+    "productivity_std_dev": 0.175,
+    "adjustment_cost_convex": 1.005,
+    "adjustment_cost_fixed": 0.028499999999999998
+}

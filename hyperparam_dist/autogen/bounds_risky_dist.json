@@ -1,0 +1,63 @@
+{
+    "bounds": {
+        "k_min": 0.2928162988883834,
+        "k_max": 140.8317340569229,
+        "b_min": -5.41371244123662,
+        "b_max": 233.6229469923483,
+        "z_min": 0.22313010692596436,
+        "z_max": 4.481689929962158,
+        "rho_min": 0.4,
+        "rho_max": 0.8,
+        "std_min": 0.05,
+        "std_max": 0.3,
+        "convex_min": 0.01,
+        "convex_max": 2.0,
+        "fixed_min": 0.01,
+        "fixed_max": 0.05,
+        "eta0_min": 0.01,
+        "eta0_max": 0.2,
+        "eta1_min": 0.01,
+        "eta1_max": 0.2
+    },
+    "source_params": {
+        "discount_factor": 0.96,
+        "capital_share": 0.6,
+        "depreciation_rate": 0.15,
+        "productivity_persistence": 0.0,
+        "productivity_std_dev": 0.0,
+        "adjustment_cost_convex": 0.0,
+        "adjustment_cost_fixed": 0.0,
+        "equity_issuance_cost_fixed": 0.0,
+        "equity_issuance_cost_linear": 0.0,
+        "default_cost_proportional": 0.3,
+        "corporate_tax_rate": 0.2,
+        "risk_free_rate": 0.04,
+        "collateral_recovery_fraction": 0.5,
+        "estimate_param": {
+            "productivity_persistence": {
+                "min": 0.4,
+                "max": 0.8
+            },
+            "productivity_std_dev": {
+                "min": 0.05,
+                "max": 0.3
+            },
+            "adjustment_cost_convex": {
+                "min": 0.01,
+                "max": 2.0
+            },
+            "adjustment_cost_fixed": {
+                "min": 0.01,
+                "max": 0.05
+            },
+            "equity_issuance_cost_fixed": {
+                "min": 0.01,
+                "max": 0.2
+            },
+            "equity_issuance_cost_linear": {
+                "min": 0.01,
+                "max": 0.2
+            }
+        }
+    }
+}

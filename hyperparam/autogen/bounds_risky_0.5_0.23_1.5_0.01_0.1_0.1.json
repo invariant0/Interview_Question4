@@ -1,0 +1,26 @@
+{
+    "bounds": {
+        "k_min": 1.5108677857496393,
+        "k_max": 32.752960269481555,
+        "b_min": -5.41371244123662,
+        "b_max": 54.33323073183757,
+        "z_min": 0.45079463720321655,
+        "z_max": 2.2183051109313965
+    },
+    "source_params": {
+        "discount_factor": 0.96,
+        "capital_share": 0.6,
+        "depreciation_rate": 0.15,
+        "productivity_persistence": 0.5,
+        "productivity_std_dev": 0.23,
+        "adjustment_cost_convex": 1.5,
+        "adjustment_cost_fixed": 0.01,
+        "equity_issuance_cost_fixed": 0.1,
+        "equity_issuance_cost_linear": 0.1,
+        "default_cost_proportional": 0.3,
+        "corporate_tax_rate": 0.2,
+        "risk_free_rate": 0.04,
+        "collateral_recovery_fraction": 0.5,
+        "estimate_param": null
+    }
+}

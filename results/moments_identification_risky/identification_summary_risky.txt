@@ -1,0 +1,118 @@
+Jacobian-Based Moment Selection — Risky Debt Case
+================================================================================
+
+Baseline Parameters:
+  ρ (productivity_persistence): 0.6
+  σ (productivity_std_dev): 0.175
+  ξ (adjustment_cost_convex): 1.005
+  F (adjustment_cost_fixed): 0.03
+  η₀ (equity_issuance_cost_fixed): 0.105
+  η₁ (equity_issuance_cost_linear): 0.105
+
+Fixed Parameters:
+  discount_factor: 0.96
+  capital_share: 0.6
+  depreciation_rate: 0.15
+  risk_free_rate: 0.04
+  default_cost_proportional: 0.3
+  corporate_tax_rate: 0.2
+  collateral_recovery_fraction: 0.5
+
+Step sizes:
+  ρ: 0.03
+  σ: 0.01
+  ξ: 0.05
+  F: 0.0015
+  η₀: 0.005
+  η₁: 0.005
+
+Parameter bounds (from econ_params_risky_dist.json):
+  ρ: [0.4, 0.8]
+  σ: [0.05, 0.3]
+  ξ: [0.01, 2.0]
+  F: [0.01, 0.05]
+  η₀: [0.01, 0.2]
+  η₁: [0.01, 0.2]
+
+Grid Resolution:
+  [560] (n_k=n_d, n_z=12)
+
+
+SVD Results:
+  Singular values: [27.01723809  3.97178802  2.1196376   0.87651543  0.42774196  0.35938223]
+  Condition number: 75.1769
+  det(J'J): 9.392329e+02
+
+
+Selected Base 6 Moments:
+  m03: AC[I/K]                        → ρ
+  m04: Skew[I/K]                      → ξ
+  m09: SD[Y/K]                        → σ
+  m12: Corr(I/K,lag Y/K)              → ρ
+  m27: P(e_raw<0)                     → η₀
+  m28: E[|e|/K|e<0]                   → ρ
+
+  det(J'J) = 9.761287e+01
+  Condition number = 154.9255
+
+
+Augmentation Results:
+  k=7: add ['m29: E[D/K|D>0]'], κ=98.60, σ_min=0.2713
+  k=8: add ['m22: Corr(ΔB/K,Y/K)', 'm29: E[D/K|D>0]'], κ=89.99, σ_min=0.2982
+  k=9: add ['m20: Median[B/K]', 'm22: Corr(ΔB/K,Y/K)', 'm29: E[D/K|D>0]'], κ=82.26, σ_min=0.3262
+
+
+Column Correlations:
+                   ρ         σ         ξ         F        η₀        η₁
+         ρ    1.0000    0.9729    0.7635   -0.7149    0.2563    0.1310
+         σ    0.9729    1.0000    0.7339   -0.6814    0.1967   -0.0293
+         ξ    0.7635    0.7339    1.0000   -0.9896    0.1680    0.0566
+         F   -0.7149   -0.6814   -0.9896    1.0000   -0.1382   -0.0750
+        η₀    0.2563    0.1967    0.1680   -0.1382    1.0000   -0.1874
+        η₁    0.1310   -0.0293    0.0566   -0.0750   -0.1874    1.0000
+
+
+η₀–η₁ Collinearity Assessment:
+  |Corr(η₀, η₁)| = 0.1874
+  → Acceptable. η₀ and η₁ are distinguishable.
+
+
+Baseline Moments (30 candidates):
+  m01: E[I/K]                         = 0.158149
+  m02: SD[I/K]                        = 0.125768
+  m03: AC[I/K]                        = 0.032023
+  m04: Skew[I/K]                      = -0.405374
+  m05: P(I/K>0.20)                    = 0.617770
+  m06: P(I/K<0)                       = 0.000000 [semi-elasticity]
+  m07: Inaction rate                  = 0.381187
+  m08: E[Y/K]                         = 0.475258
+  m09: SD[Y/K]                        = 0.092158
+  m10: AC[Y/K]                        = 0.380889
+  m11: Corr(I/K,Y/K)                  = 0.720785
+  m12: Corr(I/K,lag Y/K)              = 0.043926
+  m13: SD[log K]                      = 0.203756
+  m14: AC[log K]                      = 0.800113
+  m15: IQR[I/K]                       = 0.257957
+  m16: Kurt[I/K]                      = -1.711977
+  m17: E[B/K]                         = 5.536071
+  m18: SD[B/K]                        = 0.935085
+  m19: AC[B/K]                        = 0.806595
+  m20: Median[B/K]                    = 5.427027
+  m21: Corr(I/K,B/K)                  = 0.313440
+  m22: Corr(ΔB/K,Y/K)                 = -0.221833
+  m23: Default rate                   = 0.000022 [semi-elasticity]
+  m24: E[q]                           = 0.961517
+  m25: SD[q]                          = 0.000020 [semi-elasticity]
+  m26: Corr(q,B/K)                    = -0.313440
+  m27: P(e_raw<0)                     = 0.093890
+  m28: E[|e|/K|e<0]                   = 0.137920
+  m29: E[D/K|D>0]                     = 0.139000
+  m30: SD[D/K]                        = 0.132265
+
+
+Recommended Estimation Strategy:
+  1. Estimate with base 6 (just-identified) for initial θ̂.
+  2. Re-estimate with k=7 or k=8 for robustness + J-test.
+  3. Use J-test on overidentified sets for model specification.
+  4. Report base-6 as primary; k=7–9 as sensitivity.
+  5. If η₀–η₁ collinearity severe, report 5-param robustness check.

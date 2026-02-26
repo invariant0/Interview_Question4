@@ -1,0 +1,60 @@
+Jacobian-Based Moment Selection — Basic Case
+======================================================================
+
+Baseline Parameters:
+  ρ (productivity_persistence): 0.6
+  σ (productivity_std_dev): 0.175
+  ξ (adjustment_cost_convex): 1.005
+  F (adjustment_cost_fixed): 0.03
+
+Step sizes: {'productivity_persistence': 0.03, 'productivity_std_dev': 0.01, 'adjustment_cost_convex': 0.05, 'adjustment_cost_fixed': 0.0015}
+
+
+SVD Results:
+  Singular values: [12.52569822  4.30113027  1.21860966  0.37377422]
+  Condition number: 33.5114
+  det(J'J): 6.021671e+02
+
+
+Selected Base 4 Moments:
+  m03: AC[I/K]                   → ρ
+  m04: Skew[I/K]                 → ξ
+  m09: SD[Y/K]                   → σ
+  m12: Corr(I/K,lag Y/K)         → ρ
+
+  det(J'J) = 2.459513e+02
+  Condition number = 45.3338
+
+
+Augmentation Results:
+  k=5: add ['m06: P(I/K<0)'], κ=37.07, σ_min=0.3327
+  k=6: add ['m06: P(I/K<0)', 'm08: E[Y/K]'], κ=34.22, σ_min=0.3603
+  k=7: add ['m06: P(I/K<0)', 'm07: Inaction rate', 'm08: E[Y/K]'], κ=33.98, σ_min=0.3630
+
+
+Column Correlations:
+                   ρ         σ         ξ         F
+         ρ    1.0000    0.9031    0.2831   -0.3477
+         σ    0.9031    1.0000    0.0817   -0.1535
+         ξ    0.2831    0.0817    1.0000   -0.9837
+         F   -0.3477   -0.1535   -0.9837    1.0000
+
+
+Baseline Moments (17 candidates):
+  m01: E[I/K]                    = 0.158519
+  m02: SD[I/K]                   = 0.128841
+  m03: AC[I/K]                   = 0.091904
+  m04: Skew[I/K]                 = -0.364558
+  m05: P(I/K>0.20)               = 0.607942
+  m06: P(I/K<0)                  = 0.052320
+  m07: Inaction rate             = 0.392058
+  m08: E[Y/K]                    = 0.338928
+  m09: SD[Y/K]                   = 0.066846
+  m10: AC[Y/K]                   = 0.424779
+  m11: Corr(I/K,Y/K)             = 0.717925
+  m12: Corr(I/K,lag Y/K)         = 0.069125
+  m13: SD[log K]                 = 0.227163
+  m14: AC[log K]                 = 0.831979
+  m15: IQR[I/K]                  = 0.261231
+  m16: Kurt[I/K]                 = -1.749721
+  m17: P(|Δ(I/K)|>0.10)          = 0.454241

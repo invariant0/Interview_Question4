@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "econ_models"
+version = "0.1.0"
+description = "Deep Learning and VFI solvers for Economic Models"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "tensorflow>=2.16.0",
+    "tensorflow-probability>=0.24.0",
+    "tf-keras", 
+    "numpy>=1.23.0",
+    "tensorflow[and-cuda]",
+    "matplotlib",
+    "seaborn",
+    "scipy"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "flake8"
+]
+
+# This creates command-line shortcuts for your runners
+[project.scripts]
+train-dl = "econ_models.cli.train_dl:main"
+solve-vfi = "econ_models.cli.solve_vfi:main"
+train-dl-dist = 'econ_models.cli.train_dl_dist:main'
+solve-vfi-dist = "econ_models.cli.solve_vfi_dist:main"
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+pythonpath = [
+    "src"
+]
