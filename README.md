@@ -145,6 +145,50 @@ econ-dl/
 
 ---
 
+## Scripts Usage Explaination
+
+### Basic Model
+
+
+For simulation test on basic model and basic_dist model run 
+```
+python basic_simulation.py
+python basic_simulation_dist.py
+```
+
+it will generate a single econ param and two econ params situation for both version using the final version model under basic econ model setting
+
+### Risky Model 
+
+For simulation test on risky model and risky_dist model run 
+
+```
+python risky_simulation.py
+python risky_simulation_dist.py
+```
+
+it will generate a single econ param and two econ params situation for both version using the final version model under risky econ model setting
+
+### GMM estimation
+
+run 
+```
+python basic_GMM.py
+```
+
+it will generate the GMM results and saved in result folder gmm_basic, only basic GMM is implemented
+
+### SMM estimation
+
+run 
+```
+python basic_SMM.py
+python risky_SMM.py
+```
+
+The SMM estimation process will first load from the checkpoints and doing SMM estimation and saved the result in result folder smm_basic or smm_risky
+
+
 ## Testing and Validation
 
 ### Ground Truth Validation
