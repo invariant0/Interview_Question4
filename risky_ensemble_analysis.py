@@ -41,6 +41,17 @@ from src.econ_models.config.economic_params import EconomicParams
 from src.econ_models.config.bond_config import BondsConfig
 from src.econ_models.io.file_utils import load_json_file
 
+from risky_common import (
+    DEFAULT_ECON_LIST,
+    BASE_DIR,
+    econ_tag,
+    get_econ_params_path_by_list,
+    get_bounds_path_by_list,
+    get_vfi_cache_path,
+    to_python_float,
+    apply_burn_in,
+)
+
 # Logging
 logging.basicConfig(
     level=logging.INFO,
@@ -54,27 +65,11 @@ logger = logging.getLogger(__name__)
 #  Configuration  (must stay in sync with risky_ensemble_solver.py)
 # ═══════════════════════════════════════════════════════════════════════════
 
-econ_list = [
-    [0.6, 0.17, 1.0, 0.02, 0.1, 0.08],
-    [0.5, 0.23, 1.5, 0.01, 0.1, 0.1],
-]
+econ_list = DEFAULT_ECON_LIST
 econ_id = 0
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname('./')))
-ECON_PARAMS_FILE_RISKY = os.path.join(
-    BASE_DIR,
-    f"hyperparam/prefixed/econ_params_risky_"
-    f"{econ_list[econ_id][0]}_{econ_list[econ_id][1]}_"
-    f"{econ_list[econ_id][2]}_{econ_list[econ_id][3]}_"
-    f"{econ_list[econ_id][4]}_{econ_list[econ_id][5]}.json"
-)
-BOUNDARY_RISKY = os.path.join(
-    BASE_DIR,
-    f"hyperparam/autogen/bounds_risky_"
-    f"{econ_list[econ_id][0]}_{econ_list[econ_id][1]}_"
-    f"{econ_list[econ_id][2]}_{econ_list[econ_id][3]}_"
-    f"{econ_list[econ_id][4]}_{econ_list[econ_id][5]}.json"
-)
+ECON_PARAMS_FILE_RISKY = get_econ_params_path_by_list(econ_list[econ_id])
+BOUNDARY_RISKY = get_bounds_path_by_list(econ_list[econ_id])
 
 RESULTS_DIR = './results/golden_vfi_risky'
 
@@ -99,13 +94,8 @@ def get_ensemble_configs(N: int) -> List[Tuple[int, int]]:
 
 def cache_path_for(n_k: int, n_d: int) -> str:
     """Return the ground-truth cache path for a given (N_k, N_d) config."""
-    return (
-        f'./ground_truth_risky/golden_vfi_risky_'
-        f'{econ_list[econ_id][0]}_{econ_list[econ_id][1]}_'
-        f'{econ_list[econ_id][2]}_{econ_list[econ_id][3]}_'
-        f'{econ_list[econ_id][4]}_{econ_list[econ_id][5]}_'
-        f'{n_k}_{n_d}.npz'
-    )
+    tag = econ_tag(econ_list[econ_id])
+    return get_vfi_cache_path(tag, n_k, n_d)
 
 
 # ── Moment keys & labels ────────────────────────────────────────────────
@@ -236,22 +226,6 @@ def run_simulation(
     simulator = VFISimulator_risky(econ_params)
     simulator.load_solved_vfi_solution(vfi_results)
     return simulator.simulate(initial_states_np, shock_sequence_np)
-
-
-def to_python_float(val):
-    """Convert any tensor / array / number to Python float."""
-    if val is None:
-        return 0.0
-    if hasattr(val, 'numpy'):
-        return float(val.numpy())
-    elif hasattr(val, 'item'):
-        return float(val.item())
-    return float(val)
-
-
-def apply_burn_in(results_dict: Dict[str, np.ndarray], burn_in: int) -> Dict[str, np.ndarray]:
-    """Remove burn-in periods from simulation results."""
-    return {k: v[:, burn_in:] for k, v in results_dict.items()}
 
 
 def compute_all_moments(

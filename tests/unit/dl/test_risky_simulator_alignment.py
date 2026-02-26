@@ -370,7 +370,7 @@ class TestPolicyActionComposition:
         """When invest_prob < 0.5, k' should equal (1-δ)k."""
         k, b, z = sample_states
 
-        k_prime, b_prime, invest_prob, default_prob, equity_issuance = (
+        k_prime, b_prime, invest_prob, default_prob, equity_issuance, issuance_gate_prob = (
             simulator._get_policy_action(k, b, z)
         )
 
@@ -422,7 +422,7 @@ class TestPolicyActionComposition:
         )
 
         # Compare with _get_policy_action output
-        k_prime, b_prime, _, _, _ = simulator._get_policy_action(k, b, z)
+        k_prime, b_prime, _, _, _, _ = simulator._get_policy_action(k, b, z)
 
         np.testing.assert_allclose(
             k_prime.numpy(),
@@ -440,7 +440,7 @@ class TestPolicyActionComposition:
     def test_output_clipping(self, simulator, sample_states):
         """Outputs must be clipped to [k_min, k_max] and [b_min, b_max]."""
         k, b, z = sample_states
-        k_prime, b_prime, _, _, _ = simulator._get_policy_action(k, b, z)
+        k_prime, b_prime, _, _, _, _ = simulator._get_policy_action(k, b, z)
 
         assert np.all(k_prime.numpy() >= simulator.config.capital_min - 1e-6)
         assert np.all(k_prime.numpy() <= simulator.config.capital_max + 1e-6)
@@ -575,7 +575,7 @@ class TestBondPricingAlignment:
     def test_bond_price_deterministic_seed(self, simulator, sample_states):
         """Bond price should be deterministic with a fixed seed."""
         k, b, z = sample_states
-        k_prime, b_prime, _, _, _ = simulator._get_policy_action(k, b, z)
+        k_prime, b_prime, _, _, _, _ = simulator._get_policy_action(k, b, z)
 
         tf.random.set_seed(123)
         q1 = simulator._estimate_bond_price(k_prime, b_prime, z)
@@ -591,7 +591,7 @@ class TestBondPricingAlignment:
     def test_bond_price_range(self, simulator, sample_states):
         """Bond price should be in [min_q_price, 1/(1+r)]."""
         k, b, z = sample_states
-        k_prime, b_prime, _, _, _ = simulator._get_policy_action(k, b, z)
+        k_prime, b_prime, _, _, _, _ = simulator._get_policy_action(k, b, z)
 
         q = simulator._estimate_bond_price(k_prime, b_prime, z)
         q_np = q.numpy()
@@ -636,7 +636,7 @@ class TestBondPricingAlignment:
         """Simulator bond pricing should use the (online) default_policy_net,
         not a target network (which doesn't exist at simulation time)."""
         k, b, z = sample_states
-        k_prime, b_prime, _, _, _ = simulator._get_policy_action(k, b, z)
+        k_prime, b_prime, _, _, _, _ = simulator._get_policy_action(k, b, z)
 
         # Get baseline bond price
         tf.random.set_seed(99)
@@ -678,7 +678,7 @@ class TestSimulationLoop:
 
         expected_keys = [
             "K_curr", "K_next", "B_curr", "B_next",
-            "Z_curr", "Z_next", "equity_issuance", "issuance_decision",
+            "Z_curr", "Z_next", "equity_issuance", "bond_price",
         ]
         for key in expected_keys:
             assert key in results, f"Missing key: {key}"
@@ -793,8 +793,8 @@ class TestTrainingSimulatorWeightCompat:
             ("DebtPolicyNet", "sigmoid"),
             ("InvestmentNet", "sigmoid"),
             ("DefaultPolicyNet", "sigmoid"),
-            ("EquityIssuanceInvestNet", "linear"),
-            ("EquityIssuanceNoinvestNet", "linear"),
+            ("EquityIssuanceNetInvest", "linear"),
+            ("EquityIssuanceNetNoinvest", "linear"),
             ("ValueNet", "linear"),
         ]:
             nets[name] = NeuralNetFactory.build_mlp(

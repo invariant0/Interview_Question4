@@ -78,6 +78,17 @@ from src.econ_models.moment_calculator.compute_autocorrelation import (
     compute_autocorrelation_lags_1_to_5,
 )
 
+from risky_common import (
+    FIXED_PARAMS,
+    BASE_DIR,
+    VFI_N_K,
+    VFI_N_D,
+    PARAM_KEYS as PARAM_ORDER,
+    PARAM_SYMBOLS as PARAM_LABELS,
+    to_python_float,
+    apply_burn_in,
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -89,18 +100,6 @@ logger = logging.getLogger(__name__)
 # =========================================================================
 #  §0  Parameter Alignment
 # =========================================================================
-
-BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname("./")))
-
-FIXED_PARAMS: Dict[str, float] = {
-    "discount_factor": 0.96,
-    "capital_share": 0.60,
-    "depreciation_rate": 0.15,
-    "risk_free_rate": 0.04,
-    "default_cost_proportional": 0.30,
-    "corporate_tax_rate": 0.20,
-    "collateral_recovery_fraction": 0.50,
-}
 
 TRUE_PARAMS: Dict[str, float] = {
     "productivity_persistence": 0.600,
@@ -122,18 +121,8 @@ SEARCH_BOUNDS: Dict[str, Tuple[float, float]] = {
 }
 """Search bounds from distributional training config (econ_params_risky_dist.json)."""
 
-PARAM_ORDER: List[str] = [
-    "productivity_persistence",
-    "productivity_std_dev",
-    "adjustment_cost_convex",
-    "adjustment_cost_fixed",
-    "equity_issuance_cost_fixed",
-    "equity_issuance_cost_linear",
-]
-"""Canonical parameter ordering: [ρ, σ, ξ, F, η₀, η₁]."""
-
-PARAM_LABELS: List[str] = ["ρ", "σ", "ξ", "F", "η₀", "η₁"]
-"""Unicode labels for parameters."""
+# PARAM_ORDER and PARAM_LABELS are imported from risky_common
+# as PARAM_KEYS and PARAM_SYMBOLS respectively.
 
 
 # =========================================================================
@@ -169,9 +158,7 @@ DEFAULT_N_SOBOL_STARTS: int = 10
 DEFAULT_CMA_MAX_EVALS: int = 200
 DEFAULT_MC_REPLICATIONS: int = 1
 
-VFI_N_K: int = 560
-VFI_N_D: int = 560
-"""Golden VFI grid resolution for the risky model."""
+# VFI_N_K, VFI_N_D imported from risky_common (560, 560)
 
 DL_CONFIG_PATH: str = "./hyperparam_dist/prefixed/dl_params_dist.json"
 DL_CHECKPOINT_DIR: str = "./checkpoints_final_dist/risky"
@@ -218,15 +205,7 @@ DF_OVERID: int = K_MOMENTS - P_PARAMS  # = 3
 #  Moment-computation helpers
 # =========================================================================
 
-def to_python_float(value: Any) -> float:
-    """Coerce a tensor, numpy scalar, or number to a plain Python float."""
-    if value is None:
-        return 0.0
-    if hasattr(value, "numpy"):
-        return float(value.numpy())
-    if hasattr(value, "item"):
-        return float(value.item())
-    return float(value)
+# to_python_float and apply_burn_in imported from risky_common
 
 
 def _safe_corr(x: np.ndarray, y: np.ndarray) -> float:
@@ -275,17 +254,6 @@ def _safe_skew(arr: np.ndarray) -> float:
     if len(valid) < 3:
         return 0.0
     return float(sp_skew(valid, nan_policy='omit'))
-
-
-def apply_burn_in(
-    results: Dict[str, np.ndarray], burn_in: int
-) -> Dict[str, np.ndarray]:
-    """Discard the first *burn_in* time-periods from simulation output."""
-    return {
-        key: val[:, burn_in:]
-        for key, val in results.items()
-        if isinstance(val, np.ndarray) and val.ndim == 2
-    }
 
 
 def compute_identification_moments(

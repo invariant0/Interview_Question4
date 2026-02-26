@@ -9,10 +9,17 @@ from src.econ_models.config.dl_config import load_dl_config
 from src.econ_models.simulator import DLSimulatorRiskyFinal
 from src.econ_models.simulator import VFISimulator_risky
 from src.econ_models.config.economic_params import EconomicParams
-from src.econ_models.config.bond_config import BondsConfig
 from src.econ_models.core.types import TENSORFLOW_DTYPE
-from src.econ_models.simulator import synthetic_data_generator
-from src.econ_models.io.file_utils import load_json_file
+
+from risky_common import (
+    DEFAULT_ECON_LIST,
+    VFI_N_K,
+    VFI_N_D,
+    econ_tag,
+    load_econ_params,
+    load_bonds_config,
+    setup_simulation_data,
+)
 
 tfd = tfp.distributions
 
@@ -20,27 +27,15 @@ tfd = tfp.distributions
 #  1. Setup Paths and Config
 # ============================================================
 
-econ_list = [
-    [0.6, 0.17, 1.0, 0.02, 0.1, 0.08],
+econ_list = DEFAULT_ECON_LIST + [
     [0.6, 0.17, 1.0, 0.02, 0.03, 0.01],
 ]
 econ_id = 0
-econ_tag = '_'.join(str(x) for x in econ_list[econ_id])
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname('./')))
-ECON_PARAMS_FILE = os.path.join(
-    BASE_DIR, f"hyperparam/prefixed/econ_params_risky_{econ_tag}.json"
-)
-BOUNDARY_FILE = os.path.join(
-    BASE_DIR, f"hyperparam/autogen/bounds_risky_{econ_tag}.json"
-)
+econ_tag_str = econ_tag(econ_list[econ_id])
 
 # Golden VFI solution
-N_CAPITAL = 560
-N_DEBT = 560
-VFI_FILE = f'./ground_truth_risky/golden_vfi_risky_{econ_tag}_{N_CAPITAL}_{N_DEBT}.npz'
+VFI_FILE = f'./ground_truth_risky/golden_vfi_risky_{econ_tag_str}_{VFI_N_K}_{VFI_N_D}.npz'
 
-# CHECKPOINT_DIR = './checkpoints_final/risky'
 CHECKPOINT_DIR = './checkpoints_final/risky'
 RESULTS_DIR = './results/effectiveness_risky'
 os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -49,21 +44,9 @@ os.makedirs(RESULTS_DIR, exist_ok=True)
 #  2. Load Parameters and Generate Shared Data
 # ============================================================
 
-econ_params = EconomicParams(**load_json_file(ECON_PARAMS_FILE))
-
-sample_bonds_config = BondsConfig.validate_and_load(
-    bounds_file=BOUNDARY_FILE,
-    current_params=econ_params,
-)
-
-synthetic_data_gen = synthetic_data_generator(
-    econ_params_benchmark=econ_params,
-    sample_bonds_config=sample_bonds_config,
-    batch_size=10000,
-    T_periods=1000,
-    include_debt=True,
-)
-initial_states, innovation_sequence = synthetic_data_gen.gen()
+econ_params = load_econ_params(econ_list[econ_id])
+sample_bonds_config = load_bonds_config(econ_list[econ_id], econ_params)
+initial_states, innovation_sequence = setup_simulation_data(econ_params, sample_bonds_config)
 
 # ============================================================
 #  3. Load VFI Solution for Value Function Benchmark

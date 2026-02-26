@@ -57,30 +57,22 @@ logger = logging.getLogger(__name__)
 #  Shared Configuration (must match risky_ensemble_analysis.py)
 # ═══════════════════════════════════════════════════════════════════════════
 
-econ_list = [
-    [0.6, 0.17, 1.0, 0.02, 0.1, 0.08],
-    [0.5, 0.23, 1.5, 0.01, 0.1, 0.1],
-]
+from risky_common import (
+    DEFAULT_ECON_LIST,
+    BASE_DIR,
+    N_PRODUCTIVITY,
+    econ_tag,
+    get_econ_params_path_by_list,
+    get_bounds_path_by_list,
+    get_vfi_cache_path,
+)
+
+econ_list = DEFAULT_ECON_LIST
 econ_id = 0
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname('./')))
 CONFIG_PARAMS_FILE = os.path.join(BASE_DIR, "hyperparam/prefixed/vfi_params.json")
-ECON_PARAMS_FILE_RISKY = os.path.join(
-    BASE_DIR,
-    f"hyperparam/prefixed/econ_params_risky_"
-    f"{econ_list[econ_id][0]}_{econ_list[econ_id][1]}_"
-    f"{econ_list[econ_id][2]}_{econ_list[econ_id][3]}_"
-    f"{econ_list[econ_id][4]}_{econ_list[econ_id][5]}.json"
-)
-BOUNDARY_RISKY = os.path.join(
-    BASE_DIR,
-    f"hyperparam/autogen/bounds_risky_"
-    f"{econ_list[econ_id][0]}_{econ_list[econ_id][1]}_"
-    f"{econ_list[econ_id][2]}_{econ_list[econ_id][3]}_"
-    f"{econ_list[econ_id][4]}_{econ_list[econ_id][5]}.json"
-)
-
-N_PRODUCTIVITY = 12
+ECON_PARAMS_FILE_RISKY = get_econ_params_path_by_list(econ_list[econ_id])
+BOUNDARY_RISKY = get_bounds_path_by_list(econ_list[econ_id])
 
 DENSITY_LEVELS = [360, 380, 400, 420, 440, 460, 480, 500, 520, 540, 560]
 
@@ -102,13 +94,8 @@ def get_ensemble_configs(N: int) -> List[Tuple[int, int]]:
 
 def cache_path_for(n_k: int, n_d: int) -> str:
     """Return the ground-truth cache path for a given (N_k, N_d) config."""
-    return (
-        f'./ground_truth_risky/golden_vfi_risky_'
-        f'{econ_list[econ_id][0]}_{econ_list[econ_id][1]}_'
-        f'{econ_list[econ_id][2]}_{econ_list[econ_id][3]}_'
-        f'{econ_list[econ_id][4]}_{econ_list[econ_id][5]}_'
-        f'{n_k}_{n_d}.npz'
-    )
+    tag = econ_tag(econ_list[econ_id])
+    return get_vfi_cache_path(tag, n_k, n_d)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -16,11 +16,7 @@ dependencies = [
     "tensorflow[and-cuda]",
     "matplotlib",
     "seaborn",
-    "scipy"
-]
-
-[project.optional-dependencies]
-dev = [
+    "scipy",
     "pytest",
     "black",
     "flake8"

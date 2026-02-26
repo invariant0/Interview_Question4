@@ -84,34 +84,35 @@ from src.econ_models.config.bond_config import BondsConfig
 from src.econ_models.config.dl_config import load_dl_config
 from src.econ_models.config.economic_params import EconomicParams
 from src.econ_models.io.file_utils import load_json_file
-from src.econ_models.moment_calculator.compute_autocorrelation import (
-    compute_autocorrelation_lags_1_to_5,
-)
 from src.econ_models.moment_calculator.compute_derived_quantities import (
     compute_all_derived_quantities,
 )
-from src.econ_models.moment_calculator.compute_inaction_rate import compute_inaction_rate
-from src.econ_models.moment_calculator.compute_mean import compute_global_mean
-from src.econ_models.moment_calculator.compute_std import compute_global_std
 from src.econ_models.simulator import DLSimulatorRiskyFinal_dist
-from src.econ_models.simulator import VFISimulator_risky
-from src.econ_models.simulator import synthetic_data_generator
+
+from risky_common import (
+    BASE_DIR,
+    DEFAULT_ECON_LIST as ECON_LIST,
+    MOMENT_KEYS,
+    MOMENT_LABELS,
+    VARIABLE_NAMES,
+    VFI_N_K,
+    VFI_N_D,
+    apply_burn_in,
+    compute_variable_moments,
+    compute_weighted_error,
+    econ_tag,
+    extract_freq_stats,
+    load_bonds_config,
+    load_econ_params,
+    run_vfi_simulation,
+    setup_simulation_data,
+    tensor_to_numpy,
+    to_python_float,
+)
 
 # ---------------------------------------------------------------------------
-#  Constants
+#  Constants (script-specific overrides)
 # ---------------------------------------------------------------------------
-
-ECON_LIST: List[List[float]] = [
-    [0.6, 0.17, 1.0, 0.02, 0.1, 0.08],
-    [0.5, 0.23, 1.5, 0.01, 0.1, 0.1],
-]
-"""Default economy parameter sets: [theta, rho, psi0, psi1, eta0, eta1]."""
-
-BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname("./")))
-
-VFI_N_K: int = 560
-VFI_N_D: int = 560
-"""Golden VFI grid resolution."""
 
 DL_EPOCHS: List[int] = [1400]
 """Training epochs at which DL distributional checkpoints are evaluated."""
@@ -126,21 +127,12 @@ BURN_IN: int = 400
 RESULTS_DIR: str = "./results_dist/effectiveness_risky"
 """Output directory for figures."""
 
-VARIABLE_NAMES: List[str] = [
-    "Output", "Capital", "Debt", "Leverage",
-    "Investment", "Inv. Rate", "Eq. Issuance", "Eq. Iss. Rate",
-]
-"""Economic variables tracked across moments and plots."""
-
 VARIABLE_XLABELS: List[str] = [
     "Output (Y)", "Capital (K)", "Debt (B)", "Leverage (B/K)",
     "Investment (I)", "Investment Rate (I/K)",
     "Equity Issuance (Eq)", "Eq. Issuance Rate (Eq/K)",
 ]
 """Axis labels corresponding to each variable."""
-
-MOMENT_KEYS: List[str] = ["mean", "std", "ac1"]
-MOMENT_LABELS: List[str] = ["Mean", "Std Dev", "AutoCorr (L1)"]
 
 # Inaction rate thresholds
 INACTION_LOWER: float = -0.001
@@ -150,85 +142,6 @@ INACTION_UPPER: float = 0.001
 DL_PARAMS_PATH: str = "./hyperparam_dist/prefixed/dl_params_dist.json"
 DL_BONDS_PATH: str = os.path.join(BASE_DIR, "hyperparam_dist/autogen/bounds_risky_dist.json")
 DL_ECON_PARAMS_PATH: str = os.path.join(BASE_DIR, "hyperparam_dist/prefixed/econ_params_risky_dist.json")
-
-
-# ---------------------------------------------------------------------------
-#  Helpers
-# ---------------------------------------------------------------------------
-
-def to_python_float(value: Any) -> float:
-    """Coerce a tensor, numpy scalar, or number to a plain Python float."""
-    if value is None:
-        return 0.0
-    if hasattr(value, "numpy"):
-        return float(value.numpy())
-    if hasattr(value, "item"):
-        return float(value.item())
-    return float(value)
-
-
-def tensor_to_numpy(tensor: Any) -> np.ndarray:
-    """Convert a TensorFlow tensor to a NumPy array (no-op if already NumPy)."""
-    import tensorflow as tf
-    if isinstance(tensor, tf.Tensor):
-        return tensor.numpy()
-    return np.asarray(tensor)
-
-
-def econ_tag(econ_spec: Sequence[float]) -> str:
-    """Build a filename-safe tag from the economy parameter list."""
-    return "_".join(str(x) for x in econ_spec)
-
-
-def apply_burn_in(
-    results: Dict[str, np.ndarray], burn_in: int
-) -> Dict[str, np.ndarray]:
-    """Discard the first *burn_in* time-periods from simulation output."""
-    return {
-        key: val[:, burn_in:]
-        for key, val in results.items()
-        if isinstance(val, np.ndarray) and val.ndim == 2
-    }
-
-
-def compute_variable_moments(data: np.ndarray) -> Dict[str, float]:
-    """Compute mean, std, and lag-1 autocorrelation for a 2-D array."""
-    ac = compute_autocorrelation_lags_1_to_5(data)
-    return {
-        "mean": to_python_float(compute_global_mean(data)),
-        "std": to_python_float(compute_global_std(data)),
-        "ac1": to_python_float(ac["lag_1"]),
-    }
-
-
-def compute_weighted_error(
-    vfi_moments: Dict[str, Dict[str, float]],
-    dl_moments: Dict[str, Dict[str, float]],
-    variable_names: Sequence[str],
-    moment_keys: Sequence[str] = ("mean", "std", "ac1"),
-    *,
-    vfi_freqs: Dict[str, float] | None = None,
-    dl_freqs: Dict[str, float] | None = None,
-) -> float:
-    """Weighted average percentage error across all moments and frequencies."""
-    categories: List[float] = []
-    for var in variable_names:
-        sub_errors: List[float] = []
-        for mk in moment_keys:
-            vfi_v = float(vfi_moments[var][mk])
-            dl_v = float(dl_moments[var][mk])
-            denom = abs(vfi_v) if abs(vfi_v) > 1e-12 else 1.0
-            sub_errors.append(abs(dl_v - vfi_v) / denom * 100)
-        categories.append(float(np.mean(sub_errors)))
-
-    if vfi_freqs and dl_freqs:
-        for key in vfi_freqs:
-            vfi_v = vfi_freqs[key]
-            dl_v = dl_freqs.get(key, 0.0)
-            denom = abs(vfi_v) if abs(vfi_v) > 1e-12 else 1.0
-            categories.append(abs(dl_v - vfi_v) / denom * 100)
-
-    return float(np.mean(categories))
 
 
 # ---------------------------------------------------------------------------
@@ -257,54 +170,6 @@ def create_distributional_dl_simulator() -> DLSimulatorRiskyFinal_dist:
     dl_config.debt_max = bonds_dist["b_max"]
     dl_config.debt_min = bonds_dist["b_min"]
     return DLSimulatorRiskyFinal_dist(dl_config, bonds_dist)
-
-
-# ---------------------------------------------------------------------------
-#  Data loading / simulation
-# ---------------------------------------------------------------------------
-
-def load_config(econ_spec: Sequence[float]):
-    """Load EconomicParams and BondsConfig for a risky economy."""
-    tag = econ_tag(econ_spec)
-    econ_params_file = os.path.join(
-        BASE_DIR, f"hyperparam/prefixed/econ_params_risky_{tag}.json"
-    )
-    boundary_file = os.path.join(
-        BASE_DIR, f"hyperparam/autogen/bounds_risky_{tag}.json"
-    )
-    econ_params = EconomicParams(**load_json_file(econ_params_file))
-    bonds_config = BondsConfig.validate_and_load(
-        bounds_file=boundary_file, current_params=econ_params
-    )
-    return econ_params, bonds_config
-
-
-def setup_simulation_data(econ_params, bonds_config):
-    """Generate synthetic initial states and shock sequences."""
-    data_gen = synthetic_data_generator(
-        econ_params_benchmark=econ_params,
-        sample_bonds_config=bonds_config,
-        batch_size=BATCH_SIZE,
-        T_periods=T_PERIODS,
-        include_debt=True,
-    )
-    return data_gen.gen()
-
-
-def run_vfi_simulation(econ_params, econ_spec, initial_states, shock_sequence):
-    """Load golden VFI solution and simulate."""
-    tag = econ_tag(econ_spec)
-    vfi_file = f"./ground_truth_risky/golden_vfi_risky_{tag}_{VFI_N_K}_{VFI_N_D}.npz"
-    print(f"Loading VFI golden benchmark ({VFI_N_K},{VFI_N_D}) from {vfi_file} ...")
-    vfi_sim = VFISimulator_risky(econ_params)
-    solved = np.load(vfi_file, allow_pickle=True)
-    vfi_sim.load_solved_vfi_solution(solved)
-    results = vfi_sim.simulate(
-        tuple(s.numpy() if hasattr(s, "numpy") else s for s in initial_states),
-        shock_sequence.numpy() if hasattr(shock_sequence, "numpy") else shock_sequence,
-    )
-    print("  VFI simulation complete.")
-    return results
 
 
 # ---------------------------------------------------------------------------
@@ -340,22 +205,6 @@ def extract_moments_and_flat(
     return moments, flat
 
 
-def extract_freq_stats(derived: Dict) -> Dict[str, float]:
-    """Compute inaction rate and equity issuance frequency."""
-    return {
-        "Inaction Rate": to_python_float(
-            compute_inaction_rate(
-                derived["investment_rate"],
-                INACTION_LOWER,
-                INACTION_UPPER,
-            )
-        ),
-        "Issuance Freq": to_python_float(
-            compute_global_mean(derived["issuance_binary"])
-        ),
-    }
-
-
 # ---------------------------------------------------------------------------
 #  Per-economy simulation pipeline
 # ---------------------------------------------------------------------------
@@ -386,11 +235,14 @@ def simulate_single_economy(
     )
     print(f"\n{'=' * 70}\nRunning: {label}\n{'=' * 70}")
 
-    econ_params, bonds_config = load_config(econ_spec)
+    econ_params = load_econ_params(econ_spec)
+    bonds_config = load_bonds_config(econ_spec, econ_params)
     delta = econ_params.depreciation_rate
     alpha = econ_params.capital_share
 
-    initial_states, shock_sequence = setup_simulation_data(econ_params, bonds_config)
+    initial_states, shock_sequence = setup_simulation_data(
+        econ_params, bonds_config, batch_size=BATCH_SIZE, time_periods=T_PERIODS,
+    )
 
     # --- VFI baseline ---
     tag = econ_tag(econ_spec)

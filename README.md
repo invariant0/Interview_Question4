@@ -94,6 +94,7 @@ train-dl --model risk_free
 train-dl --model risky_final
 ```
 
+
 ### 2. Distributed Economy Workflow (Dist)
 
 The distributed workflow is designed for efficiency when dealing with parameter distributions or larger scale experiments.
@@ -118,6 +119,12 @@ train-dl-dist --model basic_final    # Finetune
 train-dl-dist --model risk_free      # Pretrain
 train-dl-dist --model risky_final    # Finetune
 ```
+
+## Checkpoints Downloads
+
+all checkpoints can be download here, after downloads put each checkpoint folder and ground truth folder in current directory to run simulation without training
+
+https://drive.google.com/drive/folders/1iixLgvwNdjpJX0OtjQUJEVY6hcL9CdpR?usp=drive_link
 
 ---
 
@@ -151,7 +158,7 @@ econ-dl/
 
 
 For simulation test on basic model and basic_dist model run 
-```
+```bash
 python basic_simulation.py
 python basic_simulation_dist.py
 ```
@@ -162,7 +169,7 @@ it will generate a single econ param and two econ params situation for both vers
 
 For simulation test on risky model and risky_dist model run 
 
-```
+```bash
 python risky_simulation.py
 python risky_simulation_dist.py
 ```
@@ -172,7 +179,7 @@ it will generate a single econ param and two econ params situation for both vers
 ### GMM estimation
 
 run 
-```
+```bash
 python basic_GMM.py
 ```
 
@@ -181,7 +188,7 @@ it will generate the GMM results and saved in result folder gmm_basic, only basi
 ### SMM estimation
 
 run 
-```
+```bash
 python basic_SMM.py
 python risky_SMM.py
 ```
@@ -189,25 +196,89 @@ python risky_SMM.py
 The SMM estimation process will first load from the checkpoints and doing SMM estimation and saved the result in result folder smm_basic or smm_risky
 
 
-## Testing and Validation
+### MCMC version of structural estimation
 
-### Ground Truth Validation
-The VFI solutions provide a benchmark for value functions and company economic behavior. Validation includes convergence diagnostics, boundary analysis, and checking economic logic.
+for basic model we also implement its MCMC version, it will first load the checkpoints and then construct the mcmc process in two step:
 
-### Deep Learning Effectiveness
-Key metrics compared against VFI benchmarks include Mean/Max Absolute Error, Bellman Residuals, and Euler Residuals.
+step 1: moment prior generation
+step 2: fit the saved prior sample to multi-variable normal distribution and using posterial distribution conditioned on the bencmark the moments to aceept and reject samples according to the likelihood ratio
+
+## Testing
+
+The project uses **pytest** for testing. All tests run on CPU (no GPU required). All test dependencies are included in the main install:
 
 ```bash
-# Run all validation tests
-python -m unittest discover -s tests/unit
-python -m unittest discover -s tests/integration
-
-# Validate benchmark ground truth
-python ./validate_basic_model.py
-python ./validate_risky_model.py
-
-# Evaluate effectiveness of DL solution
-bash ./effectiveness_dl_basic.sh
-bash ./effectiveness_dl_risky.sh
-bash ./effectiveness_dl_risky_upgrade.sh
+pip install -e .
 ```
+
+### Run All Tests
+
+```bash
+pytest
+```
+
+### Run Unit Tests Only
+
+```bash
+pytest tests/unit/
+```
+
+### Run Integration Tests Only
+
+```bash
+pytest tests/integration/
+```
+
+### Run a Specific Test File
+
+```bash
+# Example: run grid builder tests
+pytest tests/unit/test_grid_builder.py
+
+# Example: run DL config tests
+pytest tests/unit/dl/test_config.py
+```
+
+### Run with Verbose Output
+
+```bash
+pytest -v
+```
+
+### Test Suite Overview
+
+**Unit Tests** (`tests/unit/`)
+
+| File | Module Under Test |
+|---|---|
+| `test_adjust_kernels.py` | VFI adjust-tile kernel (shapes, dtypes, index bounds, constraints) |
+| `test_bellman_kernels.py` | Bellman operators: `compute_ev`, `bellman_update`, `sup_norm_diff` |
+| `test_bond_price_kernels.py` | Bond price update kernel (risk-free pricing, default scenarios) |
+| `test_chunk_accumulate.py` | Tile-index remapping and running-best accumulation |
+| `test_flows.py` | Cash-flow builders: `build_adjust_flow_part1`, `build_debt_components` |
+| `test_grid_builder.py` | Grid construction (productivity, capital, debt grids) |
+| `test_grid_utils.py` | 1-D batch linear interpolation and grid utilities |
+| `test_policies.py` | Policy extraction for basic and risky models |
+| `test_basic_simulator.py` | Basic model simulator (shapes, bounds, convergence, reproducibility) |
+| `test_risky_simulator.py` | Risky model simulator (default/no-default scenarios, depreciation map) |
+| `test_tile_executor.py` | Tile executor: correct tiling coverage with mock kernels |
+| `test_tile_strategy.py` | Optimal chunk-size computation respecting VRAM budget |
+| `test_wait_kernels.py` | Wait-branch flow computation and branch reduction |
+| `dl/test_config.py` | `EconomicParams` and `DeepLearningConfig` validation |
+| `dl/test_normalizers.py` | State-space normalizers (round-trip, boundary, missing-field checks) |
+| `dl/test_econ_functions.py` | Core economic function utilities |
+| `dl/test_fischer_burmeister.py` | Fischer-Burmeister complementarity smoothing |
+| `dl/test_neural_net_factory.py` | Neural network factory construction |
+| `dl/test_state_sampler.py` | State sampling for DL training |
+| `dl/test_transitions.py` | Productivity transition logic |
+| `dl/test_risky_simulator_alignment.py` | Risky simulator alignment checks |
+
+**Integration Tests** (`tests/integration/`)
+
+| File | What It Tests |
+|---|---|
+| `test_basic_integration.py` | End-to-end basic model VFI solve on a tiny grid (convergence, monotonicity) |
+| `test_risky_integration.py` | End-to-end risky-debt model VFI solve (bond-price bounds, default regions) |
+| `test_roundtrip.py` | Full pipeline: solve risky model → simulate → verify results |
+| `test_model_smoke.py` | DL model construction and single training-step smoke tests |
+

@@ -50,6 +50,23 @@ from src.econ_models.io.file_utils import load_json_file, save_json_file, save_b
 from src.econ_models.io.artifacts import save_vfi_results
 from src.econ_models.vfi.grids.grid_utils import compute_optimal_chunks
 
+from risky_common import (
+    FIXED_PARAMS,
+    BASELINE,
+    STEP_SIZES,
+    PARAM_BOUNDS,
+    PARAM_SYMBOLS,
+    PARAM_KEYS,
+    PERTURBATION_CONFIGS as CONFIGS,
+    N_PRODUCTIVITY,
+    BASE_DIR,
+    build_full_params,
+    param_tag,
+    get_econ_params_path as econ_params_path,
+    get_bounds_path as bounds_path,
+    get_vfi_cache_path as vfi_cache_path,
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -59,85 +76,13 @@ logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  Blueprint Configuration (Section 0.1–1.3)
+#  Configuration
 # ═══════════════════════════════════════════════════════════════════════════
-
-# Fixed parameters (risky debt case — all financial frictions active)
-FIXED_PARAMS = {
-    'discount_factor': 0.96,
-    'capital_share': 0.60,
-    'depreciation_rate': 0.15,
-    'risk_free_rate': 0.04,
-    'default_cost_proportional': 0.30,
-    'corporate_tax_rate': 0.20,
-    'collateral_recovery_fraction': 0.50,
-}
-
-# Baseline structural parameters (midpoints of feasible ranges from econ_params_risky_dist.json)
-BASELINE = {
-    'productivity_persistence': 0.600,       # range: [0.40, 0.80], midpoint = 0.60
-    'productivity_std_dev': 0.175,           # range: [0.05, 0.30], midpoint = 0.175
-    'adjustment_cost_convex': 1.005,         # range: [0.01, 2.00], midpoint = 1.005
-    'adjustment_cost_fixed': 0.030,          # range: [0.01, 0.05], midpoint = 0.03
-    'equity_issuance_cost_fixed': 0.105,     # range: [0.01, 0.20], midpoint = 0.105
-    'equity_issuance_cost_linear': 0.105,    # range: [0.01, 0.20], midpoint = 0.105
-}
-
-# Step sizes (≈5% of baseline, rounded — Section 1.2)
-STEP_SIZES = {
-    'productivity_persistence': 0.030,
-    'productivity_std_dev': 0.010,
-    'adjustment_cost_convex': 0.050,
-    'adjustment_cost_fixed': 0.0015,
-    'equity_issuance_cost_fixed': 0.005,
-    'equity_issuance_cost_linear': 0.005,
-}
-
-# Parameter bounds (from econ_params_risky_dist.json estimate_param)
-PARAM_BOUNDS = {
-    'productivity_persistence': (0.40, 0.80),
-    'productivity_std_dev': (0.05, 0.30),
-    'adjustment_cost_convex': (0.01, 2.00),
-    'adjustment_cost_fixed': (0.01, 0.05),
-    'equity_issuance_cost_fixed': (0.01, 0.20),
-    'equity_issuance_cost_linear': (0.01, 0.20),
-}
-
-# Short names for parameters (for display)
-PARAM_SYMBOLS = {
-    'productivity_persistence': 'ρ',
-    'productivity_std_dev': 'σ',
-    'adjustment_cost_convex': 'ξ',
-    'adjustment_cost_fixed': 'F',
-    'equity_issuance_cost_fixed': 'η₀',
-    'equity_issuance_cost_linear': 'η₁',
-}
-
-# The 13 configurations: (tag, param_overrides)
-# C0 = baseline
-# C1/C2 = ρ±, C3/C4 = σ±, C5/C6 = ξ±, C7/C8 = F±, C9/C10 = η₀±, C11/C12 = η₁±
-CONFIGS = [
-    ('baseline', {}),
-    ('rho_plus',   {'productivity_persistence': BASELINE['productivity_persistence'] + STEP_SIZES['productivity_persistence']}),
-    ('rho_minus',  {'productivity_persistence': BASELINE['productivity_persistence'] - STEP_SIZES['productivity_persistence']}),
-    ('sigma_plus', {'productivity_std_dev': BASELINE['productivity_std_dev'] + STEP_SIZES['productivity_std_dev']}),
-    ('sigma_minus',{'productivity_std_dev': BASELINE['productivity_std_dev'] - STEP_SIZES['productivity_std_dev']}),
-    ('xi_plus',    {'adjustment_cost_convex': BASELINE['adjustment_cost_convex'] + STEP_SIZES['adjustment_cost_convex']}),
-    ('xi_minus',   {'adjustment_cost_convex': BASELINE['adjustment_cost_convex'] - STEP_SIZES['adjustment_cost_convex']}),
-    ('F_plus',     {'adjustment_cost_fixed': BASELINE['adjustment_cost_fixed'] + STEP_SIZES['adjustment_cost_fixed']}),
-    ('F_minus',    {'adjustment_cost_fixed': BASELINE['adjustment_cost_fixed'] - STEP_SIZES['adjustment_cost_fixed']}),
-    ('eta0_plus',  {'equity_issuance_cost_fixed': BASELINE['equity_issuance_cost_fixed'] + STEP_SIZES['equity_issuance_cost_fixed']}),
-    ('eta0_minus', {'equity_issuance_cost_fixed': BASELINE['equity_issuance_cost_fixed'] - STEP_SIZES['equity_issuance_cost_fixed']}),
-    ('eta1_plus',  {'equity_issuance_cost_linear': BASELINE['equity_issuance_cost_linear'] + STEP_SIZES['equity_issuance_cost_linear']}),
-    ('eta1_minus', {'equity_issuance_cost_linear': BASELINE['equity_issuance_cost_linear'] - STEP_SIZES['equity_issuance_cost_linear']}),
-]
 
 # VFI grid resolution — single high-resolution grid
 GRID_RESOLUTIONS = [560]
-N_PRODUCTIVITY = 12
 
 # Paths
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname('./')))
 CONFIG_PARAMS_FILE = os.path.join(BASE_DIR, "hyperparam/prefixed/vfi_params.json")
 
 # Boundary finder settings (lower resolution for speed)
@@ -150,37 +95,6 @@ BOUND_FINDER_N_BATCHES = 3000
 # ═══════════════════════════════════════════════════════════════════════════
 #  Helpers
 # ═══════════════════════════════════════════════════════════════════════════
-
-def build_full_params(overrides: Dict[str, float]) -> Dict[str, float]:
-    """Build full parameter dict from fixed params, baseline, and overrides."""
-    params = {}
-    params.update(FIXED_PARAMS)
-    params.update(BASELINE)
-    params.update(overrides)
-    return params
-
-
-def param_tag(params_dict: Dict[str, float]) -> str:
-    """Create a filename tag from the 6 structural parameters."""
-    rho = params_dict['productivity_persistence']
-    sigma = params_dict['productivity_std_dev']
-    xi = params_dict['adjustment_cost_convex']
-    F = params_dict['adjustment_cost_fixed']
-    eta0 = params_dict['equity_issuance_cost_fixed']
-    eta1 = params_dict['equity_issuance_cost_linear']
-    return f"{rho}_{sigma}_{xi}_{F}_{eta0}_{eta1}"
-
-
-def econ_params_path(tag: str) -> str:
-    return os.path.join(BASE_DIR, f"hyperparam/prefixed/econ_params_risky_{tag}.json")
-
-
-def bounds_path(tag: str) -> str:
-    return os.path.join(BASE_DIR, f"hyperparam/autogen/bounds_risky_{tag}.json")
-
-
-def vfi_cache_path(tag: str, n_k: int, n_d: int) -> str:
-    return f'./ground_truth_risky/golden_vfi_risky_{tag}_{n_k}_{n_d}.npz'
 
 
 def validate_perturbations():

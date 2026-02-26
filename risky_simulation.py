@@ -31,38 +31,38 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
-from src.econ_models.config.bond_config import BondsConfig
 from src.econ_models.config.dl_config import load_dl_config
 from src.econ_models.config.economic_params import EconomicParams
-from src.econ_models.io.file_utils import load_json_file
-from src.econ_models.moment_calculator.compute_autocorrelation import (
-    compute_autocorrelation_lags_1_to_5,
-)
 from src.econ_models.moment_calculator.compute_derived_quantities import (
     compute_all_derived_quantities,
 )
-from src.econ_models.moment_calculator.compute_inaction_rate import compute_inaction_rate
-from src.econ_models.moment_calculator.compute_mean import compute_global_mean
-from src.econ_models.moment_calculator.compute_std import compute_global_std
 from src.econ_models.simulator import DLSimulatorRiskyFinal
-from src.econ_models.simulator import VFISimulator_risky
-from src.econ_models.simulator import synthetic_data_generator
+
+from risky_common import (
+    DEFAULT_ECON_LIST,
+    MOMENT_KEYS,
+    MOMENT_LABELS,
+    VARIABLE_NAMES,
+    VFI_N_K,
+    VFI_N_D,
+    apply_burn_in,
+    compute_variable_moments,
+    compute_weighted_error,
+    econ_tag,
+    extract_freq_stats,
+    extract_variable_moments,
+    load_bonds_config,
+    load_econ_params,
+    plot_grouped_bars,
+    plot_histogram_comparison,
+    run_vfi_simulation,
+    setup_simulation_data,
+    to_python_float,
+)
 
 # ---------------------------------------------------------------------------
 #  Constants
 # ---------------------------------------------------------------------------
-
-ECON_LIST: List[List[float]] = [
-    [0.6, 0.17, 1.0, 0.02, 0.1, 0.08],
-    [0.5, 0.23, 1.5, 0.01, 0.1, 0.1],
-]
-"""Default economy parameter sets: [theta, rho, psi0, psi1, eta0, eta1]."""
-
-BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname("./")))
-
-VFI_N_K: int = 560
-VFI_N_D: int = 560
-"""Golden VFI grid resolution."""
 
 DL_EPOCHS: List[int] = [200 * i for i in range(1, 11)]
 # DL_EPOCHS: List[int] = [600, 680, 780, 840]
@@ -78,134 +78,10 @@ BURN_IN: int = 400
 RESULTS_DIR: str = "./results/effectiveness_risky"
 """Output directory for figures."""
 
-VARIABLE_NAMES: List[str] = [
-    "Output", "Capital", "Debt", "Leverage",
-    "Investment", "Inv. Rate", "Eq. Issuance", "Eq. Iss. Rate",
-]
-"""Economic variables tracked across moments and plots."""
-
-MOMENT_KEYS: List[str] = ["mean", "std", "ac1"]
-MOMENT_LABELS: List[str] = ["Mean", "Std Dev", "AutoCorr (L1)"]
-
-
-# ---------------------------------------------------------------------------
-#  Helpers
-# ---------------------------------------------------------------------------
-
-def to_python_float(value: Any) -> float:
-    """Coerce a tensor, numpy scalar, or number to a plain Python float."""
-    if value is None:
-        return 0.0
-    if hasattr(value, "numpy"):
-        return float(value.numpy())
-    if hasattr(value, "item"):
-        return float(value.item())
-    return float(value)
-
-
-def econ_tag(econ_spec: Sequence[float]) -> str:
-    """Build a filename-safe tag from the economy parameter list."""
-    return "_".join(str(x) for x in econ_spec)
-
-
-def apply_burn_in(
-    results: Dict[str, np.ndarray], burn_in: int
-) -> Dict[str, np.ndarray]:
-    """Discard the first *burn_in* time-periods from simulation output."""
-    return {
-        key: val[:, burn_in:]
-        for key, val in results.items()
-        if isinstance(val, np.ndarray) and val.ndim == 2
-    }
-
-
-def compute_variable_moments(data: np.ndarray) -> Dict[str, float]:
-    """Compute mean, std, and lag-1 autocorrelation for a 2-D array."""
-    ac = compute_autocorrelation_lags_1_to_5(data)
-    return {
-        "mean": to_python_float(compute_global_mean(data)),
-        "std": to_python_float(compute_global_std(data)),
-        "ac1": to_python_float(ac["lag_1"]),
-    }
-
-
-def compute_weighted_error(
-    vfi_moments: Dict[str, Dict[str, float]],
-    dl_moments: Dict[str, Dict[str, float]],
-    variable_names: Sequence[str],
-    moment_keys: Sequence[str] = ("mean", "std", "ac1"),
-    *,
-    vfi_freqs: Dict[str, float] | None = None,
-    dl_freqs: Dict[str, float] | None = None,
-) -> float:
-    """Weighted average percentage error across all moments and frequencies."""
-    categories: List[float] = []
-    for var in variable_names:
-        sub_errors: List[float] = []
-        for mk in moment_keys:
-            vfi_v = float(vfi_moments[var][mk])
-            dl_v = float(dl_moments[var][mk])
-            denom = abs(vfi_v) if abs(vfi_v) > 1e-12 else 1.0
-            sub_errors.append(abs(dl_v - vfi_v) / denom * 100)
-        categories.append(float(np.mean(sub_errors)))
-
-    if vfi_freqs and dl_freqs:
-        for key in vfi_freqs:
-            vfi_v = vfi_freqs[key]
-            dl_v = dl_freqs.get(key, 0.0)
-            denom = abs(vfi_v) if abs(vfi_v) > 1e-12 else 1.0
-            categories.append(abs(dl_v - vfi_v) / denom * 100)
-
-    return float(np.mean(categories))
-
 
 # ---------------------------------------------------------------------------
 #  Data loading / simulation
 # ---------------------------------------------------------------------------
-
-def load_config(econ_spec: Sequence[float]):
-    """Load EconomicParams and BondsConfig for a risky economy."""
-    tag = econ_tag(econ_spec)
-    econ_params_file = os.path.join(
-        BASE_DIR, f"hyperparam/prefixed/econ_params_risky_{tag}.json"
-    )
-    boundary_file = os.path.join(
-        BASE_DIR, f"hyperparam/autogen/bounds_risky_{tag}.json"
-    )
-    econ_params = EconomicParams(**load_json_file(econ_params_file))
-    bonds_config = BondsConfig.validate_and_load(
-        bounds_file=boundary_file, current_params=econ_params
-    )
-    return econ_params, bonds_config
-
-
-def setup_simulation_data(econ_params, bonds_config):
-    """Generate synthetic initial states and shock sequences."""
-    data_gen = synthetic_data_generator(
-        econ_params_benchmark=econ_params,
-        sample_bonds_config=bonds_config,
-        batch_size=BATCH_SIZE,
-        T_periods=T_PERIODS,
-        include_debt=True,
-    )
-    return data_gen.gen()
-
-
-def run_vfi_simulation(econ_params, econ_spec, initial_states, shock_sequence):
-    """Load golden VFI solution and simulate."""
-    tag = econ_tag(econ_spec)
-    vfi_file = f"./ground_truth_risky/golden_vfi_risky_{tag}_{VFI_N_K}_{VFI_N_D}.npz"
-    print(f"Loading VFI golden benchmark ({VFI_N_K},{VFI_N_D}) from {vfi_file} ...")
-    vfi_sim = VFISimulator_risky(econ_params)
-    solved = np.load(vfi_file, allow_pickle=True)
-    vfi_sim.load_solved_vfi_solution(solved)
-    results = vfi_sim.simulate(
-        tuple(s.numpy() if hasattr(s, "numpy") else s for s in initial_states),
-        shock_sequence.numpy() if hasattr(shock_sequence, "numpy") else shock_sequence,
-    )
-    print("  VFI simulation complete.")
-    return results
-
 
 def load_dl_simulator(econ_params, bonds_config):
     """Create and configure a DL simulator for the risky model."""
@@ -276,122 +152,8 @@ def run_dl_epoch(
 
 
 # ---------------------------------------------------------------------------
-#  Moments extraction helpers
-# ---------------------------------------------------------------------------
-
-def extract_variable_moments(
-    stationary: Dict[str, np.ndarray],
-    derived: Dict,
-) -> Dict[str, Dict[str, float]]:
-    """Compute moments for all tracked variables."""
-    var_data_map = {
-        "Output": derived["output"],
-        "Capital": stationary["K_curr"],
-        "Debt": stationary["B_curr"],
-        "Leverage": derived["leverage"],
-        "Investment": derived["investment"],
-        "Inv. Rate": derived["investment_rate"],
-        "Eq. Issuance": derived["equity_issuance"],
-        "Eq. Iss. Rate": derived["equity_issuance_rate"],
-    }
-    return {name: compute_variable_moments(data) for name, data in var_data_map.items()}
-
-
-def extract_freq_stats(derived: Dict) -> Dict[str, float]:
-    """Compute inaction rate and equity issuance frequency."""
-    return {
-        "Inaction Rate": to_python_float(
-            compute_inaction_rate(derived["investment_rate"], -0.001, 0.001)
-        ),
-        "Issuance Freq": to_python_float(
-            compute_global_mean(derived["issuance_binary"])
-        ),
-    }
-
-
-# ---------------------------------------------------------------------------
 #  Plotting
 # ---------------------------------------------------------------------------
-
-def plot_histogram_comparison(
-    ax,
-    vfi_data: np.ndarray,
-    dl_epoch_data: Dict[int, np.ndarray],
-    title: str,
-    xlabel: str,
-    epoch_colors: np.ndarray,
-    *,
-    bins: int = 50,
-) -> None:
-    """Draw overlapping VFI vs. multi-epoch DL histograms on *ax*."""
-    clean_vfi = vfi_data[np.isfinite(vfi_data)]
-    ax.hist(
-        clean_vfi, bins=bins, density=True, alpha=0.5,
-        color="#2C7BB6", label="VFI (Ground Truth)",
-        edgecolor="white", linewidth=0.6,
-    )
-    for idx, (epoch, dl_data) in enumerate(dl_epoch_data.items()):
-        clean_dl = dl_data[np.isfinite(dl_data)]
-        ax.hist(
-            clean_dl, bins=bins, density=True, alpha=0.7,
-            color=epoch_colors[idx + 1],
-            label=f"DL Epoch {epoch}",
-            histtype="step", linewidth=2.5,
-        )
-    ax.set_title(title, fontsize=14, fontweight="bold")
-    ax.set_xlabel(xlabel, fontsize=12)
-    ax.set_ylabel("Density", fontsize=12)
-    ax.legend(fontsize=11, framealpha=0.9, edgecolor="#bbbbbb", fancybox=True)
-    ax.grid(True, alpha=0.2, linestyle="--")
-    ax.tick_params(labelsize=11)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-
-def plot_grouped_bars(
-    ax,
-    vfi_stats: Sequence[float],
-    epoch_stats: Dict[int, Sequence[float]],
-    labels: Sequence[str],
-    epoch_colors: np.ndarray,
-    *,
-    title: str | None = None,
-) -> None:
-    """Draw grouped bar charts comparing VFI vs. multiple DL epochs."""
-    vfi_vals = [float(v) for v in vfi_stats]
-    n_groups = len(labels)
-    n_bars = 1 + len(epoch_stats)
-    width = 0.8 / n_bars
-    x = np.arange(n_groups)
-
-    rects_vfi = ax.bar(
-        x - 0.4 + width / 2, vfi_vals, width,
-        label="VFI", color="#2C7BB6", alpha=0.85,
-        edgecolor="white", linewidth=0.6,
-    )
-    ax.bar_label(rects_vfi, padding=3, fmt="%.4f", fontsize=9)
-
-    for idx, (epoch, dl_vals) in enumerate(epoch_stats.items()):
-        dl_vals = [float(v) for v in dl_vals]
-        offset = -0.4 + (idx + 1.5) * width
-        rects_dl = ax.bar(
-            x + offset, dl_vals, width,
-            label=f"DL Ep {epoch}", color=epoch_colors[idx + 1], alpha=0.8,
-            edgecolor="white", linewidth=0.6,
-        )
-        ax.bar_label(rects_dl, padding=3, fmt="%.4f", fontsize=9)
-
-    ax.set_ylabel("Value", fontsize=12)
-    if title:
-        ax.set_title(title, fontsize=14, fontweight="bold")
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels, fontsize=11)
-    ax.legend(fontsize=10, framealpha=0.9, edgecolor="#bbbbbb", fancybox=True)
-    ax.grid(axis="y", alpha=0.25, linestyle="--")
-    ax.tick_params(labelsize=11)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
 
 def plot_stationary_distributions(
     vfi_flat: Dict[str, np.ndarray],
@@ -607,21 +369,24 @@ def main() -> None:
         description="Risky debt model: DL vs VFI simulation comparison"
     )
     parser.add_argument(
-        "--econ-id", type=int, default=0, choices=range(len(ECON_LIST)),
+        "--econ-id", type=int, default=0, choices=range(len(DEFAULT_ECON_LIST)),
         help="Index into the default economy list (default: 0)",
     )
     args = parser.parse_args()
 
     econ_id: int = args.econ_id
-    econ_spec = ECON_LIST[econ_id]
+    econ_spec = DEFAULT_ECON_LIST[econ_id]
 
     # --- Load configuration ---
-    econ_params, bonds_config = load_config(econ_spec)
+    econ_params = load_econ_params(econ_spec)
+    bonds_config = load_bonds_config(econ_spec, econ_params)
     delta = econ_params.depreciation_rate
     alpha = econ_params.capital_share
 
     # --- Generate synthetic data ---
-    initial_states, shock_sequence = setup_simulation_data(econ_params, bonds_config)
+    initial_states, shock_sequence = setup_simulation_data(
+        econ_params, bonds_config, batch_size=BATCH_SIZE, time_periods=T_PERIODS,
+    )
 
     # --- VFI baseline ---
     vfi_raw = run_vfi_simulation(econ_params, econ_spec, initial_states, shock_sequence)
