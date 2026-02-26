@@ -370,25 +370,3 @@ tests/
 | `test_risky_integration.py` | `RiskyDebtModelVFI.solve()` on a 8×6×3 grid | Result keys, V-shape, non-negativity, bond-price bounds [0, q_rf], default region, policy index validity |
 | `test_roundtrip.py` | Solve risky VFI → `RiskySimulator.run()` | Simulation completes, history shapes, K/B within grid bounds, finite stats, no NaN |
 | `test_model_smoke.py` | `BasicModelDL` and `RiskFreeModelDL` | Construction, single training-step finiteness, network output shapes |
-
-### Writing New Tests
-
-When adding new tests, follow these conventions:
-
-1. **Force CPU** at the top of every test file:
-   ```python
-   import tensorflow as tf
-   tf.config.set_visible_devices([], 'GPU')
-   ```
-
-2. **Import from the installed package** (`econ_models.*`), not relative paths.
-
-3. **Use `conftest.py` helpers** for common fixtures (e.g., `make_test_params()`).
-
-4. **Place tests** in the correct directory:
-   - `tests/unit/` — tests a single function/class in isolation with synthetic inputs.
-   - `tests/unit/dl/` — tests for deep learning modules (nets, samplers, normalizers, etc.).
-   - `tests/integration/` — tests that exercise multi-component pipelines (VFI solve, simulate, DL train step).
-
-5. **Naming**: files must start with `test_`, classes with `Test`, methods with `test_`.
-
