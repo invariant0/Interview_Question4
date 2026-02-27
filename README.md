@@ -119,7 +119,7 @@ train-dl-dist --model risk_free                             # Pretrain
 train-dl-dist --model risky_final  --pretrained_epoch 2500  # Finetune
 ```
 
-#### Deep Learning Configuration
+### Deep Learning Configuration
 
 All deep learning and VFI configurations are located in the /hyperparam and /hyperparam_dist folders. While hyperparameter optimization is time-consuming, you can leverage multiple GPUs to run parallel experiments by creating multiple JSON configuration files to efficiently identify the best combinations.
 
