@@ -7,7 +7,7 @@ This repository provides a comprehensive framework for solving dynamic corporate
 The repository features two main Deep Learning implementation strategies:
 
 1.  **Single Economy Version**: Trains a model on a single set of economic parameters.
-2.  **Distributed Economy Version (Dist)**: Leveraging distributed computing to solve for a parameterized method of moments or handle multiple economies simultaneously.
+2.  **Distributed Economy Version (Dist)**: Augment the input dimension of the deep learning model to incoperate econ param input and train a surogate deep learning solution for a vector space of econ params which need estimation.
 
 ### Pretrain-Finetuning Paradigm
 
@@ -74,24 +74,24 @@ python risky_golden_vfi_finder.py
 ```
 
 #### Step 3: Deep Learning Training
-Train the neural networks using the two-stage pretrain-finetune process.
+Train the neural networks using the two-stage pretrain-finetune process. for each basic model and risky model we prepare two testing econ parameters set named them econ 0 and econ 1, you can try both of them, but since this is single model version, each time the deep learning is dedicated to one setting. The default pretraining epoch is set to 1500 for basic model and 480 for risky model. You can cirtainly try multiple starting point.
 
 **Basic Model:**
 ```bash
 # Stage 1: Pretrain (FOC-based)
-train-dl --model basic
+train-dl --model basic --econ_id 0
 
 # Stage 2: Finetune (Actor-Critic style)
-train-dl --model basic_final
+train-dl --model basic_final --econ_id 0 --pretrained_epoch 1500
 ```
 
 **Risky Model:**
 ```bash
 # Stage 1: Pretrain (Risk-free approximation)
-train-dl --model risk_free
+train-dl --model risk_free --econ_id 0
 
 # Stage 2: Finetune (Actor-Critic style with direct maximization)
-train-dl --model risky_final
+train-dl --model risky_final --econ_id 0 --pretrained_epoch 480
 ```
 
 
@@ -100,7 +100,7 @@ train-dl --model risky_final
 The distributed workflow is designed for efficiency when dealing with parameter distributions or larger scale experiments.
 
 #### Step 1: VFI Solver (Dist)
-Run the distributed VFI solver.
+Run the distributed VFI solver. This will automatically test corner area of the state space and determine the global maximum and minimum of the state value range for the deep learning dist version to train on. The global boundary will saved in hyperparam_dist folder
 
 ```bash
 solve-vfi-dist --model basic 
