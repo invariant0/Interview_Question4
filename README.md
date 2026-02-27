@@ -74,7 +74,7 @@ python risky_golden_vfi_finder.py
 ```
 
 #### Step 3: Deep Learning Training
-Train the neural networks using the two-stage pretrain-finetune process. For both the Basic Model and the Risky Model, we prepare two testing econ parameter sets, named econ 0 and econ 1. You can try both of them, but since this is the single model version, each deep learning run is dedicated to one setting. The default pretraining epochs are set to 1500 for the Basic Model and 480 for the Risky Model. You can certainly try multiple starting points.
+Train the neural networks using the two-stage pretrain-finetune process. For both the Basic Model and the Risky Model, we prepare two testing econ parameter sets, named econ 0 and econ 1. You can try both of them, but since this is the single model version, each deep learning run is dedicated to one setting. The default pretraining epochs are set to 1500 for the Basic Model and 480 for the Risky Model. You can certainly try multiple starting points. We disable the Leak Mechanism and use the value function from pretrained risk free model since the pretrained value function are enough for stable training, we activate the Leak Mechanism for dist version risky model traininig as stated below. 
 
 **Basic Model:**
 ```bash
@@ -107,7 +107,7 @@ solve-vfi-dist --model basic
 solve-vfi-dist --model risky
 ```
 #### Step 2: Deep Learning Training (Dist)
-Train the distributed deep learning models. This will load the previously found global maximum and minimal boundary and train by cross-sampling of both econ param and states. The pretraining epochs are set to 6200 for the Basic Model and 2500 for the Risky Model. You can certainly try multiple starting points. 
+Train the distributed deep learning models. This will load the previously found global maximum and minimal boundary and train by cross-sampling of both econ param and states. The pretraining epochs are set to 6200 for the Basic Model and 2500 for the Risky Model. You can certainly try multiple starting points. For this dist version dl solution, training for risky model is still very hard even with pretrained value function, therefore the policy update use the continuse net and use Leak Mechanism to mimic the value function.
 
 ```bash
 # Basic Model (Dist)
