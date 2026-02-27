@@ -151,7 +151,7 @@ def configure_model(args: argparse.Namespace) -> Any:
             batch_size_params=dl_config.batch_size_params,
         )
         pretrained_dir = getattr(args, 'pretrained_dir', None) or "checkpoints_pretrain_dist/basic"
-        pretrained_epoch = getattr(args, 'pretrained_epoch', None) or 6200
+        pretrained_epoch = args.pretrained_epoch
         extra_kwargs = {}
         if checkpoint_dir:
             extra_kwargs['checkpoint_dir'] = checkpoint_dir
@@ -183,7 +183,7 @@ def configure_model(args: argparse.Namespace) -> Any:
             batch_size_params=dl_config.batch_size_params,
         )
         pretrained_dir = getattr(args, 'pretrained_dir', None) or "checkpoints_pretrain_dist/risk_free"
-        pretrained_epoch = getattr(args, 'pretrained_epoch', None) or 2500
+        pretrained_epoch = args.pretrained_epoch
         extra_kwargs = {}
         if log_dir:
             extra_kwargs['log_dir_prefix'] = log_dir
@@ -239,7 +239,7 @@ def main():
              "'checkpoints_pretrain_dist/risk_free' for risky_final."
     )
     parser.add_argument(
-        '--pretrained-epoch',
+        '--pretrained_epoch',
         type=int,
         default=None,
         help="Override the pretrained epoch to load (basic_final/risky_final). "

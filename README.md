@@ -106,19 +106,28 @@ Run the distributed VFI solver. This will automatically test corner area of the 
 solve-vfi-dist --model basic 
 solve-vfi-dist --model risky
 ```
-
 #### Step 2: Deep Learning Training (Dist)
-Train the distributed deep learning models.
+Train the distributed deep learning models. This will load the previously found global maixmum and mimumal boundary and trained by cross sampling of both econ param and states. The pretrained epoch is set for 6200 for basic model and 2500 for risky model, you can certainly try multiple starting points. 
 
 ```bash
 # Basic Model (Dist)
-train-dl-dist --model basic          # Pretrain
-train-dl-dist --model basic_final    # Finetune
+train-dl-dist --model basic                                 # Pretrain
+train-dl-dist --model basic_final  --pretrained_epoch 6200  # Finetune
 
 # Risky Model (Dist)
-train-dl-dist --model risk_free      # Pretrain
-train-dl-dist --model risky_final    # Finetune
+train-dl-dist --model risk_free                             # Pretrain
+train-dl-dist --model risky_final  --pretrained_epoch 2500  # Finetune
 ```
+
+#### Deep Learning Configuration
+
+All deep learning and VFI configurations are located in the /hyperparam and /hyperparam_dist folders. While hyperparameter optimization is time-consuming, you can leverage multiple GPUs to run parallel experiments by creating multiple JSON configuration files to efficiently identify the best combinations.
+
+The final version of the risky model is the most difficult to train. For your reference, here are some of the most impactful hyperparameters:
+
+equity_fb_weight: Setting this value too low causes payoff leakage, meaning the model receives a free negative payoff due to insufficient forward-backward (FB) constraints on the equity issuance network. Experiments show that a value of 20 works well.
+Learning rate scheduler: This is arguably the most consequential hyperparameter to tune. After experimentation, we found success setting the overall learning rate to 0.001. The policy learning rate should match the value network (a policy scale of 1.0); setting the policy rate too low will cause the model to converge to a local minimum.
+polyak_averaging_decay: This is another critical factor. We found that starting the decay at 0.99 and ending at 0.999 yields the best results. The key takeaway is that the initial decay rate must be low enough to allow for the deconstruction of the pretrained value function, while the final decay rate must be high enough to stabilize the reconstructed value function.
 
 ## Checkpoints Downloads
 
