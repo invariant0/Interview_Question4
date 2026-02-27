@@ -262,7 +262,7 @@ For the Basic Model, we also implement its MCMC version. It will first load the 
 Step 1: Moment prior generation
 Step 2: Fit the saved prior sample to a multivariate normal distribution and use the posterior distribution conditioned on the benchmark moments to accept and reject samples according to the likelihood ratio.
 
-Prior moments sample generation, saving cached result to results/smm_mcmc_basic folder:
+Prior moments sample generation, saving cached result to results/smm_mcmc_basic folder. You can specify the number of prior samples more samples the more accurate of the prior and more time it takes.
 ```bash
 python basic_SMM_mcmc_prior.py --n-prior-samples 200 --gpu 0 
 ```
