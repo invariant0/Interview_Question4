@@ -7,7 +7,7 @@ This repository provides a comprehensive framework for solving dynamic corporate
 The repository features two main Deep Learning implementation strategies:
 
 1.  **Single Economy Version**: Trains a model on a single set of economic parameters.
-2.  **Distributed Economy Version (Dist)**: Augment the input dimension of the deep learning model to incoperate econ param input and train a surogate deep learning solution for a vector space of econ params which need estimation.
+2.  **Distributed Economy Version (Dist)**: Augment the input dimension of the deep learning model to incorporate econ param input and train a surrogate deep learning solution for a vector space of econ params which need estimation.
 
 ### Pretrain-Finetuning Paradigm
 
@@ -52,7 +52,7 @@ pip install -e .
 The single economy workflow focuses on solving the model for a specific set of parameters.
 
 #### Step 1: Boundary Discovery (VFI)
-First, use the VFI solver to automatically discover the appropriate state space boundaries.
+Then, use the VFI solver to automatically discover the appropriate state space boundaries.
 
 ```bash
 # Find bounds for Basic Model
@@ -74,7 +74,7 @@ python risky_golden_vfi_finder.py
 ```
 
 #### Step 3: Deep Learning Training
-Train the neural networks using the two-stage pretrain-finetune process. for each basic model and risky model we prepare two testing econ parameters set named them econ 0 and econ 1, you can try both of them, but since this is single model version, each time the deep learning is dedicated to one setting. The default pretraining epoch is set to 1500 for basic model and 480 for risky model. You can cirtainly try multiple starting point.
+Train the neural networks using the two-stage pretrain-finetune process. For both the Basic Model and the Risky Model, we prepare two testing econ parameter sets, named econ 0 and econ 1. You can try both of them, but since this is the single model version, each deep learning run is dedicated to one setting. The default pretraining epochs are set to 1500 for the Basic Model and 480 for the Risky Model. You can certainly try multiple starting points.
 
 **Basic Model:**
 ```bash
@@ -100,14 +100,14 @@ train-dl --model risky_final --econ_id 0 --pretrained_epoch 480
 The distributed workflow is designed for efficiency when dealing with parameter distributions or larger scale experiments.
 
 #### Step 1: VFI Solver (Dist)
-Run the distributed VFI solver. This will automatically test corner area of the state space and determine the global maximum and minimum of the state value range for the deep learning dist version to train on. The global boundary will saved in hyperparam_dist folder
+Run the distributed VFI solver. This will automatically test corner areas of the state space and determine the global maximum and minimum of the state value range for the deep learning dist version to train on. The global boundary will be saved in the hyperparam_dist folder
 
 ```bash
 solve-vfi-dist --model basic 
 solve-vfi-dist --model risky
 ```
 #### Step 2: Deep Learning Training (Dist)
-Train the distributed deep learning models. This will load the previously found global maixmum and mimumal boundary and trained by cross sampling of both econ param and states. The pretrained epoch is set for 6200 for basic model and 2500 for risky model, you can certainly try multiple starting points. 
+Train the distributed deep learning models. This will load the previously found global maximum and minimal boundary and train by cross-sampling of both econ param and states. The pretraining epochs are set to 6200 for the Basic Model and 2500 for the Risky Model. You can certainly try multiple starting points. 
 
 ```bash
 # Basic Model (Dist)
@@ -125,13 +125,13 @@ All deep learning and VFI configurations are located in the /hyperparam and /hyp
 
 The final version of the risky model is the most difficult to train. For your reference, here are some of the most impactful hyperparameters:
 
-equity_fb_weight: Setting this value too low causes payoff leakage, meaning the model receives a free negative payoff due to insufficient forward-backward (FB) constraints on the equity issuance network. Experiments show that a value of 20 works well.
-Learning rate scheduler: This is arguably the most consequential hyperparameter to tune. After experimentation, we found success setting the overall learning rate to 0.001. The policy learning rate should match the value network (a policy scale of 1.0); setting the policy rate too low will cause the model to converge to a local minimum.
-polyak_averaging_decay: This is another critical factor. We found that starting the decay at 0.99 and ending at 0.999 yields the best results. The key takeaway is that the initial decay rate must be low enough to allow for the deconstruction of the pretrained value function, while the final decay rate must be high enough to stabilize the reconstructed value function.
+*   **equity_fb_weight**: Setting this value too low causes payoff leakage, meaning the model receives a free negative payoff due to insufficient forward-backward (FB) constraints on the equity issuance network. Experiments show that a value of 20 works well.
+*   **Learning rate scheduler**: This is arguably the most consequential hyperparameter to tune. After experimentation, we found success setting the overall learning rate to 0.001. The policy learning rate should match the value network (a policy scale of 1.0); setting the policy rate too low will cause the model to converge to a local minimum.
+*   **polyak_averaging_decay**: This is another critical factor. We found that starting the decay at 0.99 and ending at 0.999 yields the best results. The key takeaway is that the initial decay rate must be low enough to allow for the deconstruction of the pretrained value function, while the final decay rate must be high enough to stabilize the reconstructed value function.
 
 ## Checkpoints Downloads
 
-model can be retrained, but in order to run simulation comparison with vfi methods, the ground truth folder need to be downloaded first or you will need to rerun the golden vfi finder to train it which takes too much time. 
+Models can be retrained. However, to run a simulation comparison with VFI methods, the ground truth folder must be downloaded first, or you will need to rerun the golden VFI finder to train it, which takes too much time. 
 
 All checkpoints can be downloaded here. After downloading, place each checkpoint folder and ground truth folder in the project root directory (`econ-dl/`) to run simulation without training.
 
@@ -211,29 +211,29 @@ econ-dl/
 
 ---
 
-## Scripts Usage Explaination
+## Scripts Usage Explanation
 
 ### Basic Model
 
 
-For simulation test on basic model and basic_dist model run 
+For simulation tests on the Basic Model and Basic Dist Model, run:
 ```bash
 python basic_simulation.py
 python basic_simulation_dist.py
 ```
 
-it will generate a single econ param and two econ params situation for both version using the final version model under basic econ model setting
+It will generate a single econ param and two econ params scenarios for both versions using the final version model under the Basic Model setting.
 
 ### Risky Model 
 
-For simulation test on risky model and risky_dist model run 
+For simulation tests on the Risky Model and Risky Dist Model, run:
 
 ```bash
 python risky_simulation.py
 python risky_simulation_dist.py
 ```
 
-it will generate a single econ param and two econ params situation for both version using the final version model under risky econ model setting
+It will generate a single econ param and two econ params scenarios for both versions using the final version model under the Risky Model setting.
 
 ### GMM estimation
 
@@ -242,7 +242,7 @@ run
 python basic_GMM.py
 ```
 
-it will generate the GMM results and saved in result folder gmm_basic, only basic GMM is implemented
+It will generate the GMM results and save them in the result folder gmm_basic. Only the Basic Model GMM is implemented.
 
 ### SMM estimation
 
@@ -252,30 +252,30 @@ python basic_SMM.py
 python risky_SMM.py
 ```
 
-The SMM estimation process will first load from the checkpoints and doing SMM estimation and saved the result in result folder smm_basic or smm_risky
+The SMM estimation process will first load from the checkpoints and perform SMM estimation, saving the result in the result folder smm_basic or smm_risky.
 
 
 ### MCMC version of structural estimation
 
-for basic model we also implement its MCMC version, it will first load the checkpoints and then construct the mcmc process in two step:
+For the Basic Model, we also implement its MCMC version. It will first load the checkpoints and then construct the MCMC process in two steps:
 
-step 1: moment prior generation
-step 2: fit the saved prior sample to multi-variable normal distribution and using posterial distribution conditioned on the bencmark the moments to aceept and reject samples according to the likelihood ratio
+Step 1: Moment prior generation
+Step 2: Fit the saved prior sample to a multivariate normal distribution and use the posterior distribution conditioned on the benchmark moments to accept and reject samples according to the likelihood ratio.
 
-prior moments sample generation, saved cach result to results/smm_mcmc_basic folder
-```
+Prior moments sample generation, saving cached result to results/smm_mcmc_basic folder:
+```bash
 python basic_SMM_mcmc_prior.py --n-prior-samples 200 --gpu 0 
 ```
-load saved cach result and construct posterior distribution for MCMC inference
+Load saved cached result and construct posterior distribution for MCMC inference:
 
-```
+```bash
 python basic_SMM_mcmc_posterior.py \\
         --prior-cache ./results/smm_mcmc_basic/prior_cache.npz
 ```
 
 ## Testing
 
-The project includes **235 automated tests** organised into unit tests and integration tests. All tests run on **CPU only** (no GPU required) and use **pytest** as the test framework.
+The project includes **235 automated tests** organized into unit tests and integration tests. All tests run on **CPU only** (no GPU required) and use **pytest** as the test framework.
 
 ### Quick Start
 
