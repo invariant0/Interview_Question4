@@ -67,10 +67,10 @@ Generate high-resolution VFI solutions to serve as the ground truth for validati
 
 ```bash
 # For Basic Model (specify economy ID, e.g., 0 or 1)
-python basic_golden_vfi_finder.py -econ_id 0
+python basic_golden_vfi_finder.py --econ_id 0
 
 # For Risky Model
-python risky_golden_vfi_finder.py
+python risky_golden_vfi_finder.py --econ_id 0 --gpus 0,1,2,3
 ```
 
 #### Step 3: Deep Learning Training

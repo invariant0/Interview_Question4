@@ -60,10 +60,7 @@ from risky_common import (
 
 # ── Path Configuration ───────────────────────────────────────────────────
 econ_list = DEFAULT_ECON_LIST
-econ_id = 1
 CONFIG_PARAMS_FILE = os.path.join(BASE_DIR, "hyperparam/prefixed/vfi_params.json")
-ECON_PARAMS_FILE_RISKY = get_econ_params_path_by_list(econ_list[econ_id])
-BOUNDARY_RISKY = get_bounds_path_by_list(econ_list[econ_id])
 
 RESULTS_DIR = './results/golden_vfi_risky'
 
@@ -76,7 +73,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def cache_path_for(n_k: int, n_d: int) -> str:
+def cache_path_for(n_k: int, n_d: int, econ_id: int) -> str:
     """Return the ground-truth cache path for a given (N_k, N_d) config."""
     tag = econ_tag(econ_list[econ_id])
     return get_vfi_cache_path(tag, n_k, n_d)
@@ -86,7 +83,7 @@ def cache_path_for(n_k: int, n_d: int) -> str:
 #  Data Setup
 # ═══════════════════════════════════════════════════════════════════════════
 
-def setup_shared_data() -> Dict[str, Any]:
+def setup_shared_data(econ_id: int) -> Dict[str, Any]:
     """
     Create shared synthetic data for all convergence tests.
 
@@ -98,11 +95,14 @@ def setup_shared_data() -> Dict[str, Any]:
 
     from src.econ_models.simulator.synthetic_data_gen import synthetic_data_generator
 
-    BOUNDS = load_json_file(BOUNDARY_RISKY)
-    ECON_PARAMS = EconomicParams(**load_json_file(ECON_PARAMS_FILE_RISKY))
+    econ_params_file = get_econ_params_path_by_list(econ_list[econ_id])
+    boundary_file = get_bounds_path_by_list(econ_list[econ_id])
+
+    BOUNDS = load_json_file(boundary_file)
+    ECON_PARAMS = EconomicParams(**load_json_file(econ_params_file))
 
     sample_bonds_config = BondsConfig.validate_and_load(
-        bounds_file=BOUNDARY_RISKY,
+        bounds_file=boundary_file,
         current_params=ECON_PARAMS
     )
 
@@ -142,6 +142,7 @@ def setup_shared_data() -> Dict[str, Any]:
 
 def _gpu_worker(
     gpu_id: int,
+    econ_id: int,
     job_queue: mp.Queue,
     result_queue: mp.Queue,
 ) -> None:
@@ -173,8 +174,11 @@ def _gpu_worker(
         logger.warning(f"Worker GPU-{gpu_id}: no GPU visible — using CPU")
 
     # Load economic parameters once per worker
-    bounds = load_json_file(BOUNDARY_RISKY)
-    econ_params = EconomicParams(**load_json_file(ECON_PARAMS_FILE_RISKY))
+    econ_params_file = get_econ_params_path_by_list(econ_list[econ_id])
+    boundary_file = get_bounds_path_by_list(econ_list[econ_id])
+    
+    bounds = load_json_file(boundary_file)
+    econ_params = EconomicParams(**load_json_file(econ_params_file))
 
     while True:
         job = job_queue.get()
@@ -183,7 +187,7 @@ def _gpu_worker(
             break
 
         n_k, n_d = job
-        cp = cache_path_for(n_k, n_d)
+        cp = cache_path_for(n_k, n_d, econ_id)
 
         # Double-check: another worker may have solved it in the meantime
         if os.path.exists(cp):
@@ -246,6 +250,7 @@ def _gpu_worker(
 
 def run_parallel_solver(
     gpu_ids: List[int],
+    econ_id: int,
     jobs: List[Tuple[int, int]],
 ) -> None:
     """
@@ -286,7 +291,7 @@ def run_parallel_solver(
     # Spawn workers
     workers = []
     for gid in gpu_ids:
-        p = mp.Process(target=_gpu_worker, args=(gid, job_queue, result_queue))
+        p = mp.Process(target=_gpu_worker, args=(gid, econ_id, job_queue, result_queue))
         p.start()
         workers.append(p)
         logger.info(f"  Started worker PID={p.pid} → GPU {gid}")
@@ -619,6 +624,10 @@ def parse_args() -> argparse.Namespace:
         '--force', action='store_true',
         help='Re-solve even if cached .npz exists',
     )
+    parser.add_argument(
+        '--econ_id', type=int, default=1,
+        help='Economic configuration ID (default: 1)',
+    )
     return parser.parse_args()
 
 
@@ -631,14 +640,16 @@ def main():
     mp.set_start_method('spawn', force=True)
     args = parse_args()
 
+    econ_id = args.econ_id
+
     # ══════════════════════════════════════════════════════════════════
     #  CONFIGURATION — edit these lists to change the convergence test
     # ══════════════════════════════════════════════════════════════════
-    # n_capital_list = [60,80,100,120,140,160,180,200, 220,240,260,280,300,320,340,360,380,400,420,440,460,480,500, 520, 540, 560]
-    # n_debt_list    = [60,80,100,120,140,160,180,200, 220,240,260,280,300,320,340,360,380,400,420,440,460,480,500, 520, 540, 560]
+    n_capital_list = [100, 150, 200, 250, 300, 350, 400, 450, 500]
+    n_debt_list    = [100, 150, 200, 250, 300, 350, 400, 450, 500]
 
-    n_capital_list = [100, 560]
-    n_debt_list    = [100, 560]
+    # n_capital_list = [100, 560]
+    # n_debt_list    = [100, 560]
 
     n_productivity = N_PRODUCTIVITY
     burn_in_periods = 400
@@ -664,7 +675,7 @@ def main():
         solve_jobs = list(all_configs)
     else:
         solve_jobs = [(nk, nd) for nk, nd in all_configs
-                      if not os.path.exists(cache_path_for(nk, nd))]
+                      if not os.path.exists(cache_path_for(nk, nd, econ_id))]
 
     # Sort longest-first for optimal GPU scheduling
     solve_jobs.sort(key=lambda x: x[0] * x[1], reverse=True)
@@ -685,17 +696,17 @@ def main():
     #  PHASE 1: Parallel VFI Solve across GPUs
     # ══════════════════════════════════════════════════════════════════
     if solve_jobs:
-        run_parallel_solver(gpu_ids, solve_jobs)
+        run_parallel_solver(gpu_ids, econ_id, solve_jobs)
     else:
         logger.info("All VFI solutions already cached — skipping solve phase.")
 
     # Verify all expected cache files exist
     missing = [(nk, nd) for nk, nd in all_configs
-               if not os.path.exists(cache_path_for(nk, nd))]
+               if not os.path.exists(cache_path_for(nk, nd, econ_id))]
     if missing:
         logger.error(f"{len(missing)} cache files still missing after solve phase:")
         for nk, nd in missing:
-            logger.error(f"  ({nk}, {nd}) → {cache_path_for(nk, nd)}")
+            logger.error(f"  ({nk}, {nd}) → {cache_path_for(nk, nd, econ_id)}")
         logger.error("Cannot proceed with simulation — aborting.")
         sys.exit(1)
 
@@ -715,7 +726,7 @@ def main():
 
     # Setup shared synthetic data
     logger.info("Setting up shared synthetic data ...")
-    shared_data = setup_shared_data()
+    shared_data = setup_shared_data(econ_id)
 
     initial_states_np = shared_data['initial_states_np']
     shock_sequence_np = shared_data['shock_sequence_np']
@@ -732,7 +743,7 @@ def main():
         logger.info('='*60)
 
         # Load cached VFI
-        cp = cache_path_for(n_k, n_d)
+        cp = cache_path_for(n_k, n_d, econ_id)
         vfi_results = np.load(cp, allow_pickle=True)
 
         # Simulate
@@ -790,7 +801,7 @@ def main():
         )
 
     # -- Save canonical copy of final VFI ------------------------------
-    last_cache = cache_path_for(n_capital_list[-1], n_debt_list[-1])
+    last_cache = cache_path_for(n_capital_list[-1], n_debt_list[-1], econ_id)
     canonical_path = (
         f'./ground_truth_risky/golden_vfi_risky_'
         f'{econ_tag(econ_list[econ_id])}.npz'
@@ -801,7 +812,8 @@ def main():
         logger.info(f"Copied final VFI results to {canonical_path}")
 
     # -- Generate plots ------------------------------------------------
-    save_dir = RESULTS_DIR
+    tag = econ_tag(econ_list[econ_id])
+    save_dir = os.path.join(RESULTS_DIR, tag)
 
     plot_moment_convergence(
         all_moments_list,
@@ -847,7 +859,7 @@ def main():
         logger.info(f"\n  {converged_count}/{len(final_changes)} moments converged (< 2% change)")
 
     # -- Save moments table --------------------------------------------
-    table_path = os.path.join(RESULTS_DIR, 'moments_table.txt')
+    table_path = os.path.join(save_dir, 'moments_table.txt')
     os.makedirs(save_dir, exist_ok=True)
     with open(table_path, 'w') as f:
         header = f"{'Grid':>12s}"
