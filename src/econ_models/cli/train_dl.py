@@ -78,7 +78,7 @@ def configure_model(args: argparse.Namespace) -> Any:
         BASIC_ECON_PARAMS_FILE = os.path.join(BASE_DIR, f"hyperparam/prefixed/econ_params_basic_{scinario_basic[0]}_{scinario_basic[1]}_{scinario_basic[2]}_{scinario_basic[3]}.json")
         BASIC_BOUNDS_FILE = os.path.join(BASE_DIR, f"hyperparam/autogen/bounds_basic_{scinario_basic[0]}_{scinario_basic[1]}_{scinario_basic[2]}_{scinario_basic[3]}.json")
 
-    elif args.model in ['risky_final', 'risk_free']:
+    elif args.model in ['risky_final', 'risky_projection', 'risk_free']:
         econ_id = args.econ_id
         scinario_risky = econ_list_risky[econ_id]
         RISKY_ECON_PARAMS_FILE = os.path.join(BASE_DIR, f"hyperparam/prefixed/econ_params_risky_{scinario_risky[0]}_{scinario_risky[1]}_{scinario_risky[2]}_{scinario_risky[3]}_{scinario_risky[4]}_{scinario_risky[5]}.json")
@@ -134,6 +134,8 @@ def configure_model(args: argparse.Namespace) -> Any:
     from econ_models.dl.basic_final import OptimizationConfig as BasicFinalOptConfig
     from econ_models.dl.risky_final import RiskyModelDL_FINAL
     from econ_models.dl.risky_final import OptimizationConfig as RiskyOptConfig
+    from econ_models.dl.risky_projection import RiskyModelDL_PROJECTION
+    from econ_models.dl.risky_projection import OptimizationConfig as ProjectionOptConfig
     from econ_models.dl.risk_free import RiskFreeModelDL
 
     # Resolve default pretrained checkpoint dir per model
@@ -162,6 +164,14 @@ def configure_model(args: argparse.Namespace) -> Any:
             pretrained_epoch=args.pretrained_epoch,
             optimization_config=opt_config,
         )
+    elif args.model == 'risky_projection':
+        opt_config = ProjectionOptConfig()
+        return RiskyModelDL_PROJECTION(
+            econ_params, dl_config, bounds,
+            pretrained_checkpoint_dir=pretrained_dir,
+            pretrained_epoch=args.pretrained_epoch,
+            optimization_config=opt_config,
+        )
     elif args.model == 'risk_free':
         return RiskFreeModelDL(econ_params, dl_config, bounds)
     
@@ -174,10 +184,10 @@ def main():
         '--model',
         type=str,
         default='basic',
-        choices=['basic', 'basic_final', 'risky_final', 'risk_free'],
+        choices=['basic', 'basic_final', 'risky_final', 'risky_projection', 'risk_free'],
         help="Model architecture to train. "
              "'basic'/'risk_free': pretrain stage (FOC-based, saves to checkpoints_pretrain/). "
-             "'basic_final'/'risky_final': final stage (loads pretrained, saves to checkpoints_final/)."
+             "'basic_final'/'risky_final'/'risky_projection': final stage (loads pretrained, saves to checkpoints_final/)."
     )
     parser.add_argument(
         '--pretrained_checkpoint_dir',

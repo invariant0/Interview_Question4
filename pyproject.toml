@@ -14,9 +14,11 @@ dependencies = [
     "tf-keras>=2.16.0", 
     "numpy>=1.23.0",
     "tensorflow[and-cuda]",
+    "tensorboard>=2.16.0",
     "matplotlib",
     "seaborn",
     "scipy",
+    "cma",
     "pytest",
     "black",
     "flake8"

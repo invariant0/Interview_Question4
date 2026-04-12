@@ -12,7 +12,7 @@ Example:
     ... )
 """
 
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 import tensorflow as tf
 import numpy as np
@@ -38,7 +38,8 @@ class NeuralNetFactory:
         output_activation: str = "linear",
         hidden_activation: Optional[str] = None,
         scale_factor: Optional[float] = None,
-        name: str = "MLP"
+        name: str = "MLP",
+        hidden_layers: Optional[Tuple[int, ...]] = None,
     ) -> tf.keras.Model:
         """
         Build a Multi-Layer Perceptron using the Keras Functional API.
@@ -50,12 +51,16 @@ class NeuralNetFactory:
             output_activation: Activation function for the final layer.
             scale_factor: If provided, multiplies output by this constant.
             name: Name of the Keras model.
+            hidden_layers: Override for config.hidden_layers. When
+                provided, uses these layer sizes instead.
 
         Returns:
             Compiled (but untrained) Keras model.
         """
         if hidden_activation is None:
             hidden_activation = config.activation_function
+
+        layer_sizes = hidden_layers if hidden_layers is not None else config.hidden_layers
         
         inputs = tf.keras.layers.Input(
             shape=(input_dim,),
@@ -64,7 +69,7 @@ class NeuralNetFactory:
         )
 
         x = inputs
-        for i, units in enumerate(config.hidden_layers):
+        for i, units in enumerate(layer_sizes):
             # 1. Create the Dense layer.
             # If using Layer Norm, the bias in the Dense layer is redundant
             # because Layer Norm centers the data (subtracting the mean),

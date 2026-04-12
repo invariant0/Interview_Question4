@@ -65,7 +65,6 @@
         "polyak_averaging_decay": 0.99,
         "polyak_decay_end": 0.999,
         "polyak_decay_epochs": 2001,
-        "policy_change_scale": 10.0,
         "target_update_freq": 10,        
 
 
@@ -104,5 +103,36 @@
         "min_q_price": 1e-4,
         "epsilon_debt": 1e-4,
         "epsilon_value_default": 1e-4
+    },
+    "risky_projection": {
+        "batch_size": 5000,
+        "learning_rate": 0.0008,
+        "lr_policy_scale": 1.0,
+        "epochs": 3001,
+        "steps_per_epoch": 100,
+
+        "polyak_averaging_decay": 0.95,
+        "polyak_decay_end": 0.95,
+        "polyak_decay_epochs": 3001,
+        "target_update_freq": 10,
+
+        "equity_fb_weight": 50,
+        "equity_fb_weight_start": 50,
+        "equity_fb_weight_end": 50,
+        "equity_fb_start_epoch": 0,
+        "equity_fb_end_epoch": 3000,
+
+        "hidden_layers": [128, 128],
+        "policy_hidden_layers": [128, 128, 64, 64],
+        "activation_function": "tanh",
+        "mc_sample_number_bond_priceing": 50,
+        "gradient_clip_norm": 100.0,
+        "min_q_price": 1e-8,
+        "epsilon_debt": 1e-8,
+        "epsilon_value_default": 0.0,
+
+        "equity_softplus_multiplier": 1.0,
+        "equity_softplus_divisor": 1.0,
+        "equity_gate_prob_multiplier": 1.0
     }
 }

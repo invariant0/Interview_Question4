@@ -361,3 +361,38 @@ def save_checkpoint_risk_free_dist(
         default_policy_net.save_weights(path / f"risk_free_default_policy_net_{epoch}{suffix}.weights.h5")
     if continuous_net is not None:
         continuous_net.save_weights(path / f"risk_free_continuous_net_{epoch}{suffix}.weights.h5")
+
+
+def save_checkpoint_risky_projection(
+    invest_policy_net: tf.keras.Model,
+    debt_net_noinvest: tf.keras.Model,
+    investment_decision_net: tf.keras.Model,
+    continuous_net: tf.keras.Model,
+    epoch: int,
+    save_dir: str = "checkpoints_final/risky_projection",
+    suffix: str = "",
+) -> None:
+    """Save checkpoint for risky projection model networks (2-branch architecture).
+
+    Saves the networks used by the projection training architecture:
+        - invest_policy_net: [k', b', equity_raw] (3 outputs, linear).
+        - debt_net_noinvest: [b', equity_raw] (2 outputs, linear).
+        - investment_decision_net: 2-way softmax (invest vs wait).
+        - continuous_net: Continuation value V_cont(s) (linear output).
+
+    Args:
+        invest_policy_net: Invest policy network [k', b', equity_raw].
+        debt_net_noinvest: Wait policy network [b', equity_raw].
+        investment_decision_net: 2-way branch-selection network.
+        continuous_net: Continuation value network V_cont(s).
+        epoch: Current training epoch for naming.
+        save_dir: Directory for checkpoint storage.
+        suffix: Optional suffix for filename.
+    """
+    path = Path(save_dir)
+    path.mkdir(parents=True, exist_ok=True)
+
+    invest_policy_net.save_weights(path / f"risky_invest_policy_net_{epoch}{suffix}.weights.h5")
+    debt_net_noinvest.save_weights(path / f"risky_wait_policy_net_{epoch}{suffix}.weights.h5")
+    investment_decision_net.save_weights(path / f"risky_branch_selection_net_{epoch}{suffix}.weights.h5")
+    continuous_net.save_weights(path / f"risky_continuous_net_{epoch}{suffix}.weights.h5")

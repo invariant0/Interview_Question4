@@ -147,8 +147,17 @@ class DeepLearningConfig:
     # Set to 0 to disable warm-up (default behaviour).
     policy_warmup_epochs: Optional[int] = None
 
-    # Policy change-rate scale (legacy, unused with sigmoid+denorm workflow)
-    policy_change_scale: Optional[float] = None
+    # Separate hidden layers for policy networks (projection model).
+    # When None, falls back to ``hidden_layers``.
+    policy_hidden_layers: Optional[Tuple[int, ...]] = None
+
+    # Equity issuance softplus transform parameters (projection model).
+    # equity_issuance = softplus(multiplier * raw) / divisor
+    equity_softplus_multiplier: Optional[float] = None
+    equity_softplus_divisor: Optional[float] = None
+
+    # Equity gate probability multiplier: sigmoid(gate_mul * raw)
+    equity_gate_prob_multiplier: Optional[float] = None
 
     # Cross-product sampling
     cross_product_sampling: Optional[bool] = None
@@ -263,6 +272,8 @@ def load_dl_config(filename: str, model_type: str) -> DeepLearningConfig:
         # Convert hidden_layers list to tuple if present (JSON arrays are lists)
         if 'hidden_layers' in filtered_data and isinstance(filtered_data['hidden_layers'], list):
             filtered_data['hidden_layers'] = tuple(filtered_data['hidden_layers'])
+        if 'policy_hidden_layers' in filtered_data and isinstance(filtered_data['policy_hidden_layers'], list):
+            filtered_data['policy_hidden_layers'] = tuple(filtered_data['policy_hidden_layers'])
 
         config = DeepLearningConfig(**filtered_data)
         
