@@ -56,10 +56,16 @@ git clone https://github.com/invariant0/Interview_Question4.git
 cd Interview_Question4
 
 # Create conda environment (installs Python, CUDA toolkit, cuDNN, and all deps)
-conda env create -f environment.yml
+# --override-channels ensures only 'defaults' is used, ignoring any extra
+# channels (conda-forge, psi4, etc.) in the machine's ~/.condarc
+conda create -n econ-dl --override-channels -c defaults \
+  python=3.11 "tensorflow=2.19.1=cuda124py311ha1f05a4_200" \
+  numpy tensorboard matplotlib seaborn scipy \
+  pytest black flake8 pip -y
 conda activate econ-dl
 
-# Register the project package (CLI commands, importable modules)
+# Install pure-Python packages via pip and register the project package
+pip install tensorflow-probability==0.25.0 tf-keras==2.19.0 cma
 pip install --no-deps -e .
 ```
 
