@@ -62,14 +62,9 @@ source tf/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install package in development mode
 pip install -e .
-
-# Patch activate script for CUDA/GPU support
-source setup_cuda_env.sh
-# Then reload the environment
-deactivate && source tf/bin/activate
 ```
 
-> **GPU Note:** `tensorflow[and-cuda]` installs NVIDIA libraries (cuBLAS, cuDNN, etc.) into the venv's `site-packages/nvidia/`, but TensorFlow only finds them if `LD_LIBRARY_PATH` is set correctly. The `setup_cuda_env.sh` script patches your `activate` script to do this automatically. **Run it once** after creating the venv.
+> **GPU Note:** `tensorflow[and-cuda]` installs NVIDIA libraries (cuBLAS, cuDNN, etc.) into the venv's `site-packages/nvidia/`. The package automatically configures `LD_LIBRARY_PATH` at runtime (via `econ_models._cuda_setup`) so GPU support works out of the box on any machine — no manual shell patching required.
 
 ---
 
