@@ -1026,14 +1026,14 @@ class RiskyModelDL_PROJECTION:
         (br_inv_1_tgt, br_inv_2_tgt,
          br_noinv_1_tgt, br_noinv_2_tgt,
          ) = tf.split(branch_all_4_tgt, 4, axis=0)
-        # v_inv_1_tgt = v_cont_inv_1_tgt * (1.0 - br_inv_1_tgt[:, 2:3])
-        # v_inv_2_tgt = v_cont_inv_2_tgt * (1.0 - br_inv_2_tgt[:, 2:3])
-        # v_noinv_1_tgt = v_cont_noinv_1_tgt * (1.0 - br_noinv_1_tgt[:, 2:3])
-        # v_noinv_2_tgt = v_cont_noinv_2_tgt * (1.0 - br_noinv_2_tgt[:, 2:3])
-        v_inv_1_tgt = tf.maximum(v_cont_inv_1_tgt, 0.0)
-        v_inv_2_tgt = tf.maximum(v_cont_inv_2_tgt, 0.0)
-        v_noinv_1_tgt = tf.maximum(v_cont_noinv_1_tgt, 0.0)
-        v_noinv_2_tgt = tf.maximum(v_cont_noinv_2_tgt, 0.0)
+        v_inv_1_tgt = v_cont_inv_1_tgt * (1.0 - br_inv_1_tgt[:, 2:3])
+        v_inv_2_tgt = v_cont_inv_2_tgt * (1.0 - br_inv_2_tgt[:, 2:3])
+        v_noinv_1_tgt = v_cont_noinv_1_tgt * (1.0 - br_noinv_1_tgt[:, 2:3])
+        v_noinv_2_tgt = v_cont_noinv_2_tgt * (1.0 - br_noinv_2_tgt[:, 2:3])
+        # v_inv_1_tgt = tf.maximum(v_cont_inv_1_tgt, 0.0)
+        # v_inv_2_tgt = tf.maximum(v_cont_inv_2_tgt, 0.0)
+        # v_noinv_1_tgt = tf.maximum(v_cont_noinv_1_tgt, 0.0)
+        # v_noinv_2_tgt = tf.maximum(v_cont_noinv_2_tgt, 0.0)
 
         # Dividends for label computation
         div_inv_tgt, _, _ = self._compute_dividend(

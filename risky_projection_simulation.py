@@ -65,10 +65,10 @@ from risky_common import (
 #  Constants
 # ---------------------------------------------------------------------------
 
-DL_EPOCHS: List[int] = [2600]
+DL_EPOCHS: List[int] = [3000]
 """Training epochs at which DL checkpoints are evaluated."""
 
-CHECKPOINT_DIR: str = "./checkpoints_final/risky_projection"
+CHECKPOINT_DIR: str = "./checkpoints_final/risky_projection_saved"
 """Directory containing DL projection model weight files."""
 
 BATCH_SIZE: int = 10000

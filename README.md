@@ -1,6 +1,27 @@
 # Economic Models: VFI and Deep Learning Solvers
 
+## Minipatch: Risky Projection
+
+Fully differentiable default value function handling through default policy and continuous net with unified policy update.
+
+**Training:**
+```bash
+train-dl --model risky_projection --gpu 0
+```
+
+**Simulation:**
+```bash
+python risky_projection_simulation.py --gpu 0
+```
+
+**Checkpoint download:** [risky_projection](https://drive.google.com/drive/folders/1ikVwpX8Chm2jqPF6JSRwiQeuNqQUI-up?usp=drive_link) — download the folder and place it under `checkpoints_final/`.
+
+---
+
 This repository provides a comprehensive framework for solving dynamic corporate finance models using **Value Function Iteration (VFI)** and **Deep Learning (DL)** approaches. It supports both **Basic Investment Models** and **Risky Debt Investment Models**.
+
+
+
 
 ## Implementation Overview
 
