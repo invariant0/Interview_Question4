@@ -45,9 +45,8 @@ Both implementation versions (Single and Distributed) adopt a robust **Pretrain-
 
 ### Prerequisites
 
-- Python 3.8+
-- TensorFlow 2.x
-- TensorFlow Probability
+- Conda (Miniconda or Anaconda)
+- NVIDIA GPU driver (≥ 525 for CUDA 12.x)
 
 ### Setup
 
@@ -56,15 +55,12 @@ Both implementation versions (Single and Distributed) adopt a robust **Pretrain-
 git clone https://github.com/invariant0/Interview_Question4.git
 cd Interview_Question4
 
-# Create virtual environment
-python -m venv tf
-source tf/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install package in development mode
-pip install -e .
+# Create conda environment (installs Python, CUDA toolkit, cuDNN, and all deps)
+conda env create -f environment.yml
+conda activate econ-dl
 ```
 
-> **GPU Note:** `tensorflow[and-cuda]` installs NVIDIA libraries (cuBLAS, cuDNN, etc.) into the venv's `site-packages/nvidia/`. The package automatically configures `LD_LIBRARY_PATH` at runtime (via `econ_models._cuda_setup`) so GPU support works out of the box on any machine — no manual shell patching required.
+> **GPU Note:** Conda installs the full CUDA toolkit and cuDNN inside the environment, so GPU support works on any machine with an NVIDIA driver — no system-level CUDA install or `LD_LIBRARY_PATH` configuration needed.
 
 ---
 

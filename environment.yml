@@ -1,0 +1,12 @@
+name: econ-dl
+channels:
+  - conda-forge
+  - nvidia
+  - defaults
+dependencies:
+  - python=3.11
+  - cuda-toolkit=12.2
+  - cudnn=8.9
+  - pip
+  - pip:
+      - -e .
