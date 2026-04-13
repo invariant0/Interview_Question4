@@ -8,10 +8,13 @@ version = "0.1.0"
 description = "Deep Learning and VFI solvers for Economic Models"
 readme = "README.md"
 requires-python = ">=3.9"
+# Runtime deps are managed by conda (environment.yml).
+# Only list them here so `pip install -e .` doesn't break
+# when they are already present in the conda env.
 dependencies = [
     "tensorflow>=2.16.0",
     "tensorflow-probability>=0.24.0",
-    "tf-keras>=2.16.0", 
+    "tf-keras>=2.16.0",
     "numpy>=1.23.0",
     "tensorboard>=2.16.0",
     "matplotlib",

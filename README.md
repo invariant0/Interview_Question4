@@ -58,6 +58,9 @@ cd Interview_Question4
 # Create conda environment (installs Python, CUDA toolkit, cuDNN, and all deps)
 conda env create -f environment.yml
 conda activate econ-dl
+
+# Register the project package (CLI commands, importable modules)
+pip install --no-deps -e .
 ```
 
 > **GPU Note:** Conda installs the full CUDA toolkit and cuDNN inside the environment, so GPU support works on any machine with an NVIDIA driver — no system-level CUDA install or `LD_LIBRARY_PATH` configuration needed.
