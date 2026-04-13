@@ -263,7 +263,7 @@ def main() -> None:
     """Run the convergence test across capital grid resolutions."""
     parser = argparse.ArgumentParser(description="Test VFI moment convergence")
     parser.add_argument(
-        "--econ-id", type=int, default=0, choices=range(len(DEFAULT_ECON_LIST)),
+        "--econ_id", type=int, default=0, choices=range(len(DEFAULT_ECON_LIST)),
         help="Index into the default economy list (default: 0)",
     )
     args = parser.parse_args()

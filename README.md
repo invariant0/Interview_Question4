@@ -83,11 +83,11 @@ The single economy workflow focuses on solving the model for a specific set of p
 Then, use the VFI solver to automatically discover the appropriate state space boundaries.
 
 ```bash
-# Find bounds for Basic Model
-solve-vfi --model basic --find_bounds
+# Find bounds for Basic Model (specify economy ID, e.g., 0 or 1)
+solve-vfi --model basic --find_bounds --econ_id 0 --gpu 0
 
 # Find bounds for Risky Model
-solve-vfi --model risky --find_bounds
+solve-vfi --model risky --find_bounds --econ_id 0 --gpu 0
 ```
 
 #### Step 2: Compute Golden Ground Truth

@@ -18,10 +18,27 @@ import json
 import os
 from typing import Optional, Tuple, Dict, Any
 
+
+def _early_gpu_setup() -> None:
+    """Parse --gpu from sys.argv and set CUDA_VISIBLE_DEVICES **before** any
+    TensorFlow import."""
+    for i, arg in enumerate(sys.argv):
+        if arg == '--gpu' and i + 1 < len(sys.argv):
+            gpu_id = sys.argv[i + 1]
+            os.environ['CUDA_VISIBLE_DEVICES'] = gpu_id
+            break
+
+_early_gpu_setup()
+
+# These imports trigger TensorFlow initialisation via core.types.
 from econ_models.config.economic_params import EconomicParams
 from econ_models.config.vfi_config import GridConfig, load_grid_config
 from econ_models.io.artifacts import save_vfi_results
 from econ_models.io.file_utils import load_json_file, save_boundary_to_json
+
+import tensorflow as _tf
+for _gpu in _tf.config.list_physical_devices('GPU'):
+    _tf.config.experimental.set_memory_growth(_gpu, True)
 
 # Path configuration
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname('./')))
@@ -345,10 +362,11 @@ def solve_risky_model(args) -> None:
 
 
 def configure_gpu(gpu_id=None) -> None:
-    """Pin this process to a single GPU via CUDA_VISIBLE_DEVICES."""
+    """Log GPU configuration (actual pinning done by _early_gpu_setup)."""
     if gpu_id is not None:
-        os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
-        logger.info(f"GPU pinned to device {gpu_id}")
+        logger.info(f"GPU pinned to device {gpu_id} (CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')})")
+    else:
+        logger.info(f"No --gpu flag; visible GPUs: {os.environ.get('CUDA_VISIBLE_DEVICES', 'all')}")
 
 
 def main():

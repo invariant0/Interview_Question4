@@ -114,7 +114,7 @@
         "polyak_averaging_decay": 0.95,
         "polyak_decay_end": 0.95,
         "polyak_decay_epochs": 3001,
-        "target_update_freq": 10,
+        "target_update_freq": 20,
 
         "equity_fb_weight": 50,
         "equity_fb_weight_start": 50,

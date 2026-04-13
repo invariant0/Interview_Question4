@@ -6,8 +6,9 @@ This script orchestrates the VFI solving process including
 automatic boundary discovery and result persistence.
 
 Example:
-    $ python -m econ_models.cli.solve_vfi --model basic
-    $ python -m econ_models.cli.solve_vfi --model risky
+    $ solve-vfi --model basic --find_bounds --econ_id 0 --gpu 0
+    $ solve-vfi --model risky --find_bounds --econ_id 0 --gpu 0
+    $ solve-vfi --model basic --solve --econ_id 1 --gpu 2
 """
 
 import argparse
@@ -18,37 +19,41 @@ import json
 import os
 from typing import Optional, Tuple, Dict, Any
 
+
+def _early_gpu_setup() -> None:
+    """Parse --gpu from sys.argv and set CUDA_VISIBLE_DEVICES **before** any
+    TensorFlow import.  This is necessary because module-level imports below
+    (vfi_config → core.types) trigger ``import tensorflow``, which snapshots
+    the visible-device list at initialisation time.
+    """
+    for i, arg in enumerate(sys.argv):
+        if arg == '--gpu' and i + 1 < len(sys.argv):
+            gpu_id = sys.argv[i + 1]
+            os.environ['CUDA_VISIBLE_DEVICES'] = gpu_id
+            break
+
+_early_gpu_setup()
+
+# These imports trigger TensorFlow initialisation via core.types —
+# CUDA_VISIBLE_DEVICES must already be set.
 from econ_models.config.economic_params import EconomicParams
 from econ_models.config.vfi_config import GridConfig, load_grid_config
 from econ_models.io.artifacts import save_vfi_results
 from econ_models.io.file_utils import load_json_file, save_boundary_to_json
 
-# VFI config
+# Enable memory growth so TF doesn't pre-allocate all GPU VRAM.
+import tensorflow as _tf
+for _gpu in _tf.config.list_physical_devices('GPU'):
+    _tf.config.experimental.set_memory_growth(_gpu, True)
+
+# ---------------------------------------------------------------------------
+#  Path / scenario configuration (mirrors train_dl.py)
+# ---------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname('./')))
 CONFIG_PARAMS_FILE = os.path.join(BASE_DIR, "hyperparam/prefixed/vfi_params.json")
 
-
-# BASIC config 
-# scinario_basic = [0.6, 0.17, 1.0, 0.02]
-scinario_basic = [0.57, 0.2, 0.8, 0.022]
-CONFIG_PARAMS_FILE = os.path.join(BASE_DIR, "hyperparam/prefixed/vfi_params.json")
-ECON_PARAMS_FILE_BASIC = os.path.join(BASE_DIR, f"hyperparam/prefixed/econ_params_basic_{scinario_basic[0]}_{scinario_basic[1]}_{scinario_basic[2]}_{scinario_basic[3]}.json")
-SAVE_BOUNDARY_BASIC = os.path.join(BASE_DIR, f"hyperparam/autogen/bounds_basic_{scinario_basic[0]}_{scinario_basic[1]}_{scinario_basic[2]}_{scinario_basic[3]}.json")
-SAVE_GROUND_TRUTH_BASIC = os.path.join(BASE_DIR, f"ground_truth_basic/basic_model_vfi_results_{scinario_basic[0]}_{scinario_basic[1]}_{scinario_basic[2]}_{scinario_basic[3]}.npz")
-os.makedirs(os.path.dirname(SAVE_GROUND_TRUTH_BASIC), exist_ok=True)
-PARAMS_BASIC = load_json_file(ECON_PARAMS_FILE_BASIC)
-PARAMS_BASIC = EconomicParams(**PARAMS_BASIC)
-
-# RISKY config
-# scinario_risky = [0.6, 0.17, 1.0, 0.02, 0.1, 0.08]
-scinario_risky = [0.5, 0.23, 1.5, 0.01, 0.1, 0.1]
-
-ECON_PARAMS_FILE_RISKY = os.path.join(BASE_DIR, f"hyperparam/prefixed/econ_params_risky_{scinario_risky[0]}_{scinario_risky[1]}_{scinario_risky[2]}_{scinario_risky[3]}_{scinario_risky[4]}_{scinario_risky[5]}.json")
-SAVE_BOUNDARY_RISKY = os.path.join(BASE_DIR, f"hyperparam/autogen/bounds_risky_{scinario_risky[0]}_{scinario_risky[1]}_{scinario_risky[2]}_{scinario_risky[3]}_{scinario_risky[4]}_{scinario_risky[5]}.json")
-SAVE_GROUND_TRUTH_RISKY = os.path.join(BASE_DIR, f"ground_truth_risky/risky_debt_model_vfi_results_{scinario_risky[0]}_{scinario_risky[1]}_{scinario_risky[2]}_{scinario_risky[3]}_{scinario_risky[4]}_{scinario_risky[5]}.npz")
-os.makedirs(os.path.dirname(SAVE_GROUND_TRUTH_RISKY), exist_ok=True)
-PARAMS_RISKY = load_json_file(ECON_PARAMS_FILE_RISKY)
-PARAMS_RISKY = EconomicParams(**PARAMS_RISKY)
+econ_list_basic = [[0.6, 0.17, 1.0, 0.02], [0.57, 0.2, 0.8, 0.022]]
+econ_list_risky = [[0.6, 0.17, 1.0, 0.02, 0.1, 0.08], [0.5, 0.23, 1.5, 0.01, 0.1, 0.1]]
 
 # Configure logging
 logging.basicConfig(
@@ -58,12 +63,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def _basic_paths(econ_id: int):
+    """Derive parameter / boundary / ground-truth paths for a basic scenario."""
+    s = econ_list_basic[econ_id]
+    tag = f"{s[0]}_{s[1]}_{s[2]}_{s[3]}"
+    econ_file = os.path.join(BASE_DIR, f"hyperparam/prefixed/econ_params_basic_{tag}.json")
+    bounds_file = os.path.join(BASE_DIR, f"hyperparam/autogen/bounds_basic_{tag}.json")
+    gt_file = os.path.join(BASE_DIR, f"ground_truth_basic/basic_model_vfi_results_{tag}.npz")
+    os.makedirs(os.path.dirname(gt_file), exist_ok=True)
+    params = EconomicParams(**load_json_file(econ_file))
+    return econ_file, bounds_file, gt_file, params
+
+
+def _risky_paths(econ_id: int):
+    """Derive parameter / boundary / ground-truth paths for a risky scenario."""
+    s = econ_list_risky[econ_id]
+    tag = f"{s[0]}_{s[1]}_{s[2]}_{s[3]}_{s[4]}_{s[5]}"
+    econ_file = os.path.join(BASE_DIR, f"hyperparam/prefixed/econ_params_risky_{tag}.json")
+    bounds_file = os.path.join(BASE_DIR, f"hyperparam/autogen/bounds_risky_{tag}.json")
+    gt_file = os.path.join(BASE_DIR, f"ground_truth_risky/risky_debt_model_vfi_results_{tag}.npz")
+    os.makedirs(os.path.dirname(gt_file), exist_ok=True)
+    params = EconomicParams(**load_json_file(econ_file))
+    return econ_file, bounds_file, gt_file, params
+
+
 def solve_basic_model(args) -> None:
     """Orchestrate solving the Basic RBC Model."""
     from econ_models.vfi.basic import BasicModelVFI
     from econ_models.vfi.bounds import BoundaryFinder
 
-    logger.info(f"Loading parameters from {ECON_PARAMS_FILE_BASIC}...")
+    econ_file, bounds_file, gt_file, params = _basic_paths(args.econ_id)
+    logger.info(f"Loading parameters from {econ_file}...")
 
     config = load_grid_config(CONFIG_PARAMS_FILE, args.model)
 
@@ -73,7 +104,7 @@ def solve_basic_model(args) -> None:
             n_capital=200,
         )
         logger.info("Starting automatic boundary discovery for Basic Model...")
-        finder = BoundaryFinder(PARAMS_BASIC, config, n_steps=1000, n_batches=5000, margin= 1.1)
+        finder = BoundaryFinder(params, config, n_steps=1000, n_batches=5000, margin=1.5)
         bounds_result = finder.find_basic_bounds(max_iters=50)
 
         k_bounds = bounds_result['k_bounds_add_margin']
@@ -84,15 +115,15 @@ def solve_basic_model(args) -> None:
             "z_min": float(z_bounds[0]),
             "z_max": float(z_bounds[1])
         }
-        save_boundary_to_json(SAVE_BOUNDARY_BASIC, bounds_data, PARAMS_BASIC)
+        save_boundary_to_json(bounds_file, bounds_data, params)
         logger.info(
             f"\nFinal Boundary Determined: \n"
             f"K={bounds_result['k_bounds_add_margin']}, \n"
             f"Z={bounds_result['z_bounds_original']}\n"
         )
     else:
-        logger.info(f"Loading boundaries from {SAVE_BOUNDARY_BASIC}...")
-        bounds_json = load_json_file(SAVE_BOUNDARY_BASIC)
+        logger.info(f"Loading boundaries from {bounds_file}...")
+        bounds_json = load_json_file(bounds_file)
         bounds_result = {
             'k_bounds_add_margin': (
                 bounds_json['bounds']['k_min'],
@@ -103,12 +134,12 @@ def solve_basic_model(args) -> None:
         config = load_grid_config(CONFIG_PARAMS_FILE, args.model)
         logger.info(f"Solving Ground Truth Basic Model with grid size n_capital = {config.n_capital} n_productivity = {config.n_productivity}...")
         solver = BasicModelVFI(
-            PARAMS_BASIC, config, k_bounds=bounds_result['k_bounds_add_margin']
+            params, config, k_bounds=bounds_result['k_bounds_add_margin']
         )
         res = solver.solve()
 
-        save_vfi_results(res, SAVE_GROUND_TRUTH_BASIC)
-        logger.info(f"VFI Results saved to {SAVE_GROUND_TRUTH_BASIC}")
+        save_vfi_results(res, gt_file)
+        logger.info(f"VFI Results saved to {gt_file}")
 
 
 def solve_risky_model(args) -> None:
@@ -116,7 +147,8 @@ def solve_risky_model(args) -> None:
     from econ_models.vfi.risky import RiskyDebtModelVFI
     from econ_models.vfi.bounds import BoundaryFinder
 
-    logger.info(f"Loading parameters from {ECON_PARAMS_FILE_RISKY}...")
+    econ_file, bounds_file, gt_file, params = _risky_paths(args.econ_id)
+    logger.info(f"Loading parameters from {econ_file}...")
     config = load_grid_config(CONFIG_PARAMS_FILE, args.model)
     if args.find_bounds:
         config = dataclasses.replace(
@@ -125,7 +157,7 @@ def solve_risky_model(args) -> None:
             n_debt=100,
         )
         logger.info("Starting automatic boundary discovery for Risky Debt Model with Low Resolution...")
-        finder = BoundaryFinder(PARAMS_RISKY, config, n_steps=1000, n_batches=5000, k_chunk_size=80, b_chunk_size=80, margin = 1.1)
+        finder = BoundaryFinder(params, config, n_steps=1000, n_batches=5000, k_chunk_size=80, b_chunk_size=80, margin=1.5)
         bounds_result = finder.find_risky_bounds(max_iters=50)
 
         k_bounds = bounds_result['k_bounds_add_margin']
@@ -140,7 +172,7 @@ def solve_risky_model(args) -> None:
             "z_min": float(z_bounds[0]),
             "z_max": float(z_bounds[1])
         }
-        save_boundary_to_json(SAVE_BOUNDARY_RISKY, bounds_data, PARAMS_RISKY)
+        save_boundary_to_json(bounds_file, bounds_data, params)
         logger.info(
             f"\nFinal Boundary Determined: \n"
             f"K={bounds_result['k_bounds_add_margin']},\n"
@@ -148,8 +180,8 @@ def solve_risky_model(args) -> None:
             f"Z={bounds_result['z_bounds_original']}\n"
         )
     else:
-        logger.info(f"Loading boundaries from {SAVE_BOUNDARY_RISKY}...")
-        bounds_json = load_json_file(SAVE_BOUNDARY_RISKY)
+        logger.info(f"Loading boundaries from {bounds_file}...")
+        bounds_json = load_json_file(bounds_file)
         bounds_result = {
             'k_bounds_add_margin': (
                 bounds_json['bounds']['k_min'],
@@ -174,7 +206,7 @@ def solve_risky_model(args) -> None:
         # and only ~6 GB VRAM despite the full state-dim coverage.
         _KP_BP_CHUNK = min(config.n_capital // 10, 50)
         solver = RiskyDebtModelVFI(
-            PARAMS_RISKY, config,
+            params, config,
             k_bounds=bounds_result['k_bounds_add_margin'],
             b_bounds=bounds_result['b_bounds_add_margin'],
             k_chunk_size=config.n_capital,
@@ -184,15 +216,16 @@ def solve_risky_model(args) -> None:
         )
         res = solver.solve()
 
-        save_vfi_results(res, SAVE_GROUND_TRUTH_RISKY)
-        logger.info(f"VFI Results saved to {SAVE_GROUND_TRUTH_RISKY}")
+        save_vfi_results(res, gt_file)
+        logger.info(f"VFI Results saved to {gt_file}")
 
 
 def configure_gpu(gpu_id: Optional[int]) -> None:
-    """Pin this process to a single GPU via CUDA_VISIBLE_DEVICES."""
+    """Log GPU configuration (actual pinning done by _early_gpu_setup)."""
     if gpu_id is not None:
-        os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
-        logger.info(f"GPU pinned to device {gpu_id}")
+        logger.info(f"GPU pinned to device {gpu_id} (CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')})")
+    else:
+        logger.info(f"No --gpu flag; visible GPUs: {os.environ.get('CUDA_VISIBLE_DEVICES', 'all')}")
 
 
 def main():
@@ -210,7 +243,6 @@ def main():
         action='store_true',
         help="Flag to find boundaries automatically."
     )
-
     parser.add_argument(
         '--solve',
         action='store_true',
@@ -221,6 +253,12 @@ def main():
         type=int,
         default=None,
         help="GPU device ID to use (0-3). If not set, uses all GPUs."
+    )
+    parser.add_argument(
+        '--econ_id',
+        type=int,
+        default=0,
+        help="Economic scenario ID to use for loading parameters and bounds."
     )
     args = parser.parse_args()
     configure_gpu(args.gpu)
