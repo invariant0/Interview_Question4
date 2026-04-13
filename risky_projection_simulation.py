@@ -68,7 +68,7 @@ from risky_common import (
 DL_EPOCHS: List[int] = [3000]
 """Training epochs at which DL checkpoints are evaluated."""
 
-CHECKPOINT_DIR: str = "./checkpoints_final/risky_projection_saved"
+CHECKPOINT_DIR: str = "./checkpoints_final/risky_projection"
 """Directory containing DL projection model weight files."""
 
 BATCH_SIZE: int = 10000
