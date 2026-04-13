@@ -63,7 +63,7 @@ conda activate econ-dl
 pip install --no-deps -e .
 ```
 
-> **GPU Note:** Conda installs the full CUDA toolkit and cuDNN inside the environment, so GPU support works on any machine with an NVIDIA driver — no system-level CUDA install or `LD_LIBRARY_PATH` configuration needed.
+> **GPU Note:** Conda installs the full CUDA toolkit and cuDNN from the `defaults` channel inside the environment, so GPU support works on any machine with an NVIDIA driver — no system-level CUDA install or `LD_LIBRARY_PATH` configuration needed. Pure-Python packages (`tensorflow-probability`, `tf-keras`, `cma`) are installed via pip to avoid conda-forge connectivity issues.
 
 ---
 

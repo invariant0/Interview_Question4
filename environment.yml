@@ -1,19 +1,19 @@
 name: econ-dl
 channels:
   - defaults
-  - conda-forge
 dependencies:
   - python=3.11
   - tensorflow=2.19.1=cuda124py311ha1f05a4_200
-  - tensorflow-probability=0.25.0
-  - tf-keras=2.19.0
   - numpy
   - tensorboard
   - matplotlib
   - seaborn
   - scipy
-  - cma
   - pytest
   - black
   - flake8
   - pip
+  - pip:
+      - tensorflow-probability==0.25.0
+      - tf-keras==2.19.0
+      - cma
