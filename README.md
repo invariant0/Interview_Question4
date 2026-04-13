@@ -14,7 +14,7 @@ train-dl --model risky_projection --gpu 0
 python risky_projection_simulation.py --gpu 0
 ```
 
-**Checkpoint download:** [risky_projection](https://drive.google.com/drive/folders/1ikVwpX8Chm2jqPF6JSRwiQeuNqQUI-up?usp=drive_link) — download the folder and place it under `checkpoints_final/`.
+**Checkpoint download:** [risky_projection](https://drive.google.com/drive/folders/10f6vb8CBqFftReS5yQlszonI2CTXU6Zo?usp=drive_link) — download the folder and place it under `checkpoints_final/`.
 
 ---
 
